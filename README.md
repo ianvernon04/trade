@@ -11,6 +11,14 @@ technology news from a dozen sources, and a trade journal with P&L analytics.
 
 ## Quick start
 
+**Windows:** double-click `start.bat` — it installs dependencies, starts the
+server, and opens your browser automatically.
+
+**macOS:** double-click `start.command` (first time: right-click → Open, since
+it's unsigned). Same behavior.
+
+**Linux / terminal:**
+
 ```bash
 ./run.sh              # installs deps and starts the server
 # then open http://127.0.0.1:8000
