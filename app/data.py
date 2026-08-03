@@ -11,14 +11,26 @@ import threading
 import time
 from typing import Any, Optional
 
+import logging
+
 import pandas as pd
 import yfinance as yf
+
+# yfinance prints its own errors (e.g. 404s for symbols without fundamentals);
+# we handle failures ourselves, so keep its console output quiet.
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 # Default watchlist: large-cap / high-volume technology names with liquid options.
 DEFAULT_WATCHLIST = [
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
     "AMD", "AVGO", "PLTR", "QQQ", "SPY",
 ]
+
+# ETFs have no earnings reports — never ask Yahoo for their earnings dates.
+ETF_TICKERS = {
+    "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO", "SMH", "SOXX",
+    "XLK", "XLF", "XLE", "ARKK", "TQQQ", "SQQQ", "GLD", "TLT",
+}
 
 _cache: dict[str, tuple[float, Any]] = {}
 _cache_lock = threading.Lock()
@@ -112,6 +124,8 @@ def get_earnings_info(ticker: str) -> dict:
     """Next earnings date and days until it (cached 6h). Best-effort:
     returns {"next_earnings": None, ...} when Yahoo has nothing listed."""
     ticker = ticker.upper().strip()
+    if ticker in ETF_TICKERS:
+        return {"next_earnings": None, "days_until": None}
 
     def fetch():
         from datetime import date, datetime
