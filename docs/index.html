@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Options Trading Assistant — free, open-source trading co-pilot</title>
+<meta name="description" content="A free self-hosted app with live quotes, buy/sell signals, options chain analytics, backtesting, tech news, and a per-user trade journal.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232322;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --border: rgba(255,255,255,0.10); --accent: #3987e5; --good: #0ca30c; --warn: #fab219;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--page); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+  header.hero { text-align: center; padding: 72px 24px 48px; }
+  .hero h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.15; }
+  .hero p.tag { color: var(--ink-2); font-size: 19px; max-width: 640px; margin: 18px auto 0; }
+  .cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
+  .btn {
+    display: inline-block; padding: 14px 28px; border-radius: 10px; text-decoration: none;
+    font-weight: 700; font-size: 17px; border: 1px solid var(--border); color: var(--ink);
+  }
+  .btn.primary { background: var(--accent); border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.ghost:hover { background: var(--surface-2); }
+  .free { color: var(--muted); font-size: 14px; margin-top: 12px; }
+  section { padding: 36px 0; }
+  h2 { font-size: 26px; margin-bottom: 18px; text-align: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .card h3 { font-size: 16px; margin-bottom: 8px; }
+  .card p { color: var(--ink-2); font-size: 14.5px; }
+  .shots { display: grid; gap: 18px; }
+  .shots img { width: 100%; border-radius: 12px; border: 1px solid var(--border); display: block; }
+  .steps { counter-reset: step; max-width: 720px; margin: 0 auto; }
+  .step { display: flex; gap: 16px; margin: 18px 0; align-items: flex-start; }
+  .step::before {
+    counter-increment: step; content: counter(step);
+    background: var(--accent); color: #fff; font-weight: 800; border-radius: 50%;
+    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .step div { color: var(--ink-2); } .step b { color: var(--ink); }
+  code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; font-size: 14px; }
+  .note { background: rgba(250,178,25,0.10); border: 1px solid rgba(250,178,25,0.4); color: var(--warn);
+    border-radius: 10px; padding: 14px 16px; font-size: 14px; max-width: 720px; margin: 26px auto 0; }
+  footer { text-align: center; color: var(--muted); font-size: 13.5px; padding: 40px 24px 60px; border-top: 1px solid var(--border); margin-top: 40px; }
+  footer a { color: var(--ink-2); }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <h1>⚡ Options Trading Assistant</h1>
+  <p class="tag">A free, open-source trading co-pilot you run on your own computer:
+  live quotes and buy/sell signals, options chain analytics with call/put reads,
+  backtesting, tech news, and a private per-user trade journal.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/ianvernon04/trade/archive/refs/heads/main.zip">⬇ Download for Windows &amp; Mac</a>
+    <a class="btn ghost" href="https://github.com/ianvernon04/trade">View source on GitHub</a>
+  </div>
+  <p class="free">Free forever · No sign-up · No API keys · Your data stays on your machine</p>
+</header>
+
+<div class="wrap">
+  <section>
+    <h2>What's inside</h2>
+    <div class="grid">
+      <div class="card"><h3>📊 Live signals</h3><p>A watchlist of big tech + SPY/QQQ with a weighted 7-indicator score (trend, MACD, RSI, stochastic, Bollinger, momentum, volume) that refreshes every 30 seconds — and explains every vote.</p></div>
+      <div class="card"><h3>🎯 Options chain reads</h3><p>Full chains with computed greeks, put/call ratios, implied volatility, expected move, max pain, unusual-activity scanner, and a clear CALL / PUT / NO TRADE recommendation.</p></div>
+      <div class="card"><h3>⚠️ Earnings warnings</h3><p>The app tracks earnings dates and warns you before IV crush can hurt you — the mistake that costs new options traders the most money.</p></div>
+      <div class="card"><h3>⏪ Backtesting</h3><p>Test the exact signal you trade against years of history: win rate, profit factor, expectancy, drawdown, equity curve, and a full trade log.</p></div>
+      <div class="card"><h3>📰 Live tech news</h3><p>Headlines merged from 12 sources (CNBC, TechCrunch, MarketWatch, Yahoo Finance and more), deduped and sentiment-tagged, refreshing every 3 minutes.</p></div>
+      <div class="card"><h3>📓 Private journals</h3><p>Everyone creates their own account. Trades, P&amp;L, win rate, and equity curve are computed automatically and visible only to you.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>See it in action</h2>
+    <div class="shots">
+      <img src="assets/screenshot-dashboard.png" alt="Dashboard with live watchlist and agent trading brief" loading="lazy">
+      <img src="assets/screenshot-options.png" alt="Options chain with greeks and an earnings IV-crush warning" loading="lazy">
+      <img src="assets/screenshot-learn.png" alt="Learn tab teaching options basics with videos and courses" loading="lazy">
+    </div>
+  </section>
+
+  <section>
+    <h2>Get running in 3 steps</h2>
+    <div class="steps">
+      <div class="step"><div><b>Install Python</b> (one time) from
+        <a href="https://www.python.org/downloads/" style="color:var(--accent)">python.org/downloads</a>.
+        On Windows, tick <b>"Add python.exe to PATH"</b> on the first installer screen.</div></div>
+      <div class="step"><div><b>Download the app</b> with the button above and unzip it anywhere.</div></div>
+      <div class="step"><div><b>Double-click</b> <code>start.bat</code> (Windows) or <code>start.command</code> (Mac).
+        Dependencies install automatically and your browser opens at
+        <code>http://127.0.0.1:8000</code>. New to options? Start on the <b>Learn</b> tab.</div></div>
+    </div>
+    <div class="note">⚠️ Educational tool — not financial advice. Options can lose 100% of the
+    premium paid. No signal, indicator, or backtest guarantees future results. Paper-trade first,
+    risk only what you can afford to lose, and confirm all prices in your broker.</div>
+  </section>
+</div>
+
+<footer>
+  Open source under your own control — data from Yahoo Finance and public RSS feeds.<br>
+  <a href="https://github.com/ianvernon04/trade">GitHub repository</a> ·
+  <a href="https://github.com/ianvernon04/trade/issues">Report an issue</a>
+</footer>
+
+</body>
+</html>
