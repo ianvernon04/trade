@@ -123,6 +123,18 @@ ul.reasons li { margin: 3px 0; }
 .del-btn { background: none; border: none; color: var(--muted); cursor: pointer; }
 .del-btn:hover { color: var(--critical); }
 .spin { color: var(--muted); padding: 20px; }
+#bell { position: relative; }
+.badge {
+  position: absolute; top: -6px; right: -6px; background: var(--critical); color: #fff;
+  border-radius: 999px; font-size: 10px; font-weight: 700; padding: 1px 5px; min-width: 16px;
+  text-align: center;
+}
+.chip {
+  display: inline-block; background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--series-1); border-radius: 999px; font-size: 11px; font-weight: 600;
+  padding: 0 8px; margin-left: 4px;
+}
+.scan-row { cursor: pointer; }
 .warn-box {
   background: rgba(250, 178, 25, 0.12); border: 1px solid rgba(250, 178, 25, 0.45);
   color: var(--warning); border-radius: 8px; padding: 10px 12px; margin: 10px 0;

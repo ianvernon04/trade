@@ -17,6 +17,7 @@
   <div class="brand">⚡ Options Trading Assistant</div>
   <nav id="tabs">
     <button data-tab="dashboard" class="active">Dashboard</button>
+    <button data-tab="scanner">Scanner</button>
     <button data-tab="analyze">Analyze</button>
     <button data-tab="options">Options</button>
     <button data-tab="backtest">Backtest</button>
@@ -27,6 +28,7 @@
   <div class="ticker-box">
     <input id="ticker-input" value="NVDA" spellcheck="false" autocomplete="off">
     <button id="go-btn">Analyze</button>
+    <button id="bell" title="Alerts">🔔<span id="bell-count" class="badge" hidden></span></button>
   </div>
 </header>
 
@@ -42,6 +44,24 @@
     </table></div>
     <div class="section-head"><h2>Agent brief</h2><span class="muted">click a watchlist row, or use the search box</span></div>
     <div id="agent-brief" class="card"><p class="muted">Select a ticker to generate a full trading brief (signal + options read + backtest + news).</p></div>
+  </section>
+
+  <!-- SCANNER -->
+  <section id="tab-scanner" class="tab">
+    <div class="section-head"><h2>Morning scanner — today's best setups</h2>
+      <span class="muted" id="scan-updated"></span></div>
+    <div class="card"><table id="scan-table">
+      <thead><tr><th>#</th><th>Ticker</th><th>Price</th><th>Score</th><th>Signal</th>
+        <th>Weekly</th><th>Timeframes</th><th>Fresh cross</th><th>Earnings</th><th>Rank</th></tr></thead>
+      <tbody></tbody>
+    </table><p class="muted" id="scan-note"></p></div>
+    <div class="grid2">
+      <div class="card"><h3>Macro calendar (next 45 days)</h3><table id="cal-table">
+        <thead><tr><th>Date</th><th>In</th><th>Event</th><th>Why it matters</th></tr></thead><tbody></tbody>
+      </table><p class="muted">Approximate published schedules — verify at federalreserve.gov / bls.gov.</p></div>
+      <div class="card"><h3>Alert feed <button id="alerts-notify-btn" style="float:right;font-size:12px">Enable phone/desktop notifications</button></h3>
+        <div id="alerts-list"><p class="muted">No alerts yet. The engine re-checks the watchlist and your open positions every 5 minutes.</p></div></div>
+    </div>
   </section>
 
   <!-- ANALYZE -->
@@ -68,6 +88,8 @@
     <div class="card"><h3>Why this signal — indicator votes</h3><table id="votes-table">
       <thead><tr><th>Component</th><th>Weight</th><th>Score</th><th>Reason</th></tr></thead><tbody></tbody>
     </table></div>
+    <div class="card"><h3>Agent scorecard — how often has this signal been right here?</h3>
+      <div id="scorecard-box"><p class="muted">Loading…</p></div></div>
   </section>
 
   <!-- OPTIONS -->
@@ -103,7 +125,12 @@
       <label>Max hold (bars) <input id="bt-hold" type="number" value="15" min="1" max="100"></label>
       <label>Direction <select id="bt-dir"><option value="long">Long</option><option value="short">Short</option></select></label>
       <button id="bt-run">Run backtest</button>
+      <button id="bt-optimize">Find best settings</button>
     </div>
+    <div id="bt-opt-box" class="card" hidden><h3>Optimizer — top configurations</h3>
+      <table id="bt-opt-table"><thead><tr><th>Buy ≥</th><th>Stop ×ATR</th><th>Target ×ATR</th>
+        <th>Trades</th><th>Win rate</th><th>Profit factor</th><th>Expectancy</th><th>Return</th><th>Max DD</th><th></th></tr></thead><tbody></tbody></table>
+      <p class="muted" id="bt-opt-warning"></p></div>
     <div id="bt-stats" class="tiles"></div>
     <div class="card"><h3>Strategy equity curve (1.0 = starting capital)</h3><canvas id="chart-equity" height="220"></canvas></div>
     <div class="card"><h3>Trades</h3><div class="scroll"><table id="bt-trades">
@@ -119,6 +146,7 @@
       <label><input type="checkbox" id="news-pos" checked> <span class="dot dot-pos"></span>Positive</label>
       <label><input type="checkbox" id="news-neu" checked> <span class="dot dot-neu"></span>Neutral</label>
       <label><input type="checkbox" id="news-neg" checked> <span class="dot dot-neg"></span>Negative</label>
+      <label>Ticker <select id="news-ticker"><option value="">All</option></select></label>
       <span class="muted">Sources: CNBC, TechCrunch, The Verge, Ars Technica, Wired, MarketWatch, Yahoo Finance, Investing.com, Seeking Alpha, Engadget</span>
     </div>
     <div id="news-list" class="card"></div>
@@ -143,6 +171,15 @@
       </form>
     </div>
     <div id="j-main">
+    <div class="card"><h3>Open positions — live <span class="muted" id="pos-updated"></span></h3>
+      <div id="pos-totals" class="tiles"></div>
+      <div class="scroll"><table id="pos-table">
+        <thead><tr><th>Ticker</th><th>Position</th><th>Entry</th><th>Mark</th><th>P&amp;L $</th><th>P&amp;L %</th>
+          <th>Δ shares</th><th>Θ/day $</th><th>DTE</th><th>Flags</th></tr></thead><tbody></tbody>
+      </table></div>
+      <p class="muted" id="pos-note"></p></div>
+    <div class="card"><h3>Journal coach — patterns in your trading</h3>
+      <div id="j-insights"><p class="muted">Loading…</p></div></div>
     <div id="j-stats" class="tiles"></div>
     <div class="card"><h3>Cumulative realized P&amp;L ($)</h3><canvas id="chart-pnl" height="200"></canvas></div>
     <div class="card">

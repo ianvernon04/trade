@@ -17,6 +17,37 @@ from .signals import score_frame
 RISK_FREE = 0.045  # approximate T-bill yield used for greeks
 
 
+def iv_context(ticker: str, atm_iv: float | None) -> dict | None:
+    """Where current ATM IV sits vs the past year of realized volatility.
+
+    True IV rank needs historical IV, which Yahoo doesn't provide; comparing
+    against the realized-vol distribution is the honest approximation and is
+    labeled as such in the UI.
+    """
+    if not atm_iv:
+        return None
+    try:
+        df = data.get_history(ticker, "1y", "1d")
+        rv = df["close"].pct_change().rolling(21).std() * math.sqrt(252)
+        rv = rv.dropna()
+        if len(rv) < 60:
+            return None
+        pct = float((rv < atm_iv).mean() * 100)
+        label = ("cheap" if pct < 30 else "fair" if pct < 60
+                 else "elevated" if pct < 85 else "extreme")
+        return {
+            "percentile": round(pct, 0),
+            "label": label,
+            "realized_vol_now": round(float(rv.iloc[-1]) * 100, 1),
+            "note": (f"ATM IV sits above {pct:.0f}% of the past year's realized-vol readings — "
+                     f"options look {label}. "
+                     + ("Long options are reasonable here." if pct < 60 else
+                        "Prefer defined-risk spreads over naked long options.")),
+        }
+    except Exception:
+        return None
+
+
 # ---------- Black-Scholes ----------
 
 def _norm_cdf(x: float) -> float:
@@ -170,6 +201,7 @@ def analyze_chain(ticker: str, expiry: str | None = None) -> dict:
         "call_oi": call_oi,
         "put_oi": put_oi,
         "atm_iv": round(atm_iv * 100, 1) if atm_iv else None,
+        "iv_context": iv_context(ticker, atm_iv),
         "expected_move": expected_move,
         "expected_move_pct": round(expected_move / spot * 100, 2) if expected_move else None,
         "iv_skew": skew,
@@ -217,29 +249,37 @@ def _recommend(ticker, spot, stock, pcr_vol, skew, atm_iv, expiry, dte,
     reasons.insert(0, f"Stock technical score {score:+.1f} ({stock['label']})")
 
     suggestion = None
+    spread = None
     if side:
         # Target ~0.35 delta: meaningful participation without pure lottery pricing.
         table = calls if side == "call" else puts
-        best, best_d = None, 1e9
-        for _, r in table.iterrows():
-            iv = float(r.get("impliedVolatility") or 0)
-            g = bs_greeks(spot, float(r["strike"]), T, iv, side)
-            if g["delta"] is None:
-                continue
-            dist = abs(abs(g["delta"]) - 0.35)
-            if dist < best_d:
-                best_d, best = dist, (r, g)
+
+        def _closest_to_delta(target: float):
+            best, best_d = None, 1e9
+            for _, r in table.iterrows():
+                iv = float(r.get("impliedVolatility") or 0)
+                g = bs_greeks(spot, float(r["strike"]), T, iv, side)
+                if g["delta"] is None:
+                    continue
+                dist = abs(abs(g["delta"]) - target)
+                if dist < best_d:
+                    best_d, best = dist, (r, g)
+            return best
+
+        def _mid(r):
+            if _f(r.get("bid")) and _f(r.get("ask")):
+                return round((float(r["bid"]) + float(r["ask"])) / 2, 2)
+            return _f(r.get("lastPrice"))
+
+        best = _closest_to_delta(0.35)
         if best is not None:
             r, g = best
-            mid = None
-            if _f(r.get("bid")) and _f(r.get("ask")):
-                mid = round((float(r["bid"]) + float(r["ask"])) / 2, 2)
             suggestion = {
                 "action": f"BUY {side.upper()}",
                 "strike": float(r["strike"]),
                 "expiry": expiry,
                 "dte": dte,
-                "est_mid_price": mid or _f(r.get("lastPrice")),
+                "est_mid_price": _mid(r),
                 "delta": g["delta"],
                 "theta": g["theta"],
                 "iv": round(float(r.get("impliedVolatility") or 0) * 100, 1),
@@ -248,6 +288,30 @@ def _recommend(ticker, spot, stock, pcr_vol, skew, atm_iv, expiry, dte,
                          + (" WARNING: this expiry is under 21 DTE — theta decay accelerates."
                             if dte < 21 else "")),
             }
+            # Defined-risk vertical: buy the ~0.35Δ leg, sell a ~0.20Δ further-OTM leg.
+            short = _closest_to_delta(0.20)
+            if short is not None and float(short[0]["strike"]) != float(r["strike"]):
+                sr, sg = short
+                long_mid, short_mid = _mid(r), _mid(sr)
+                if long_mid and short_mid and long_mid > short_mid:
+                    debit = round(long_mid - short_mid, 2)
+                    width = round(abs(float(sr["strike"]) - float(r["strike"])), 2)
+                    if 0 < debit < width:
+                        spread = {
+                            "name": f"{'Bull call' if side == 'call' else 'Bear put'} spread",
+                            "buy_strike": float(r["strike"]),
+                            "sell_strike": float(sr["strike"]),
+                            "expiry": expiry,
+                            "net_debit": debit,
+                            "max_loss": round(debit * 100, 2),
+                            "max_profit": round((width - debit) * 100, 2),
+                            "breakeven": round(float(r["strike"]) + debit, 2) if side == "call"
+                                         else round(float(r["strike"]) - debit, 2),
+                            "reward_risk": round((width - debit) / debit, 2),
+                            "note": ("Defined-risk alternative: caps loss at the debit and blunts "
+                                     "IV/theta versus the naked long option. Prefer it when IV is "
+                                     "elevated or holding near events."),
+                        }
     if atm_iv and atm_iv > 0.6:
         reasons.append(f"ATM IV {atm_iv * 100:.0f}% is elevated — options are expensive; "
                        "consider spreads instead of naked long options")
@@ -274,6 +338,7 @@ def _recommend(ticker, spot, stock, pcr_vol, skew, atm_iv, expiry, dte,
         "reasons": reasons,
         "warnings": warnings,
         "suggestion": suggestion,
+        "spread": spread,
     }
 
 

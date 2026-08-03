@@ -81,6 +81,40 @@ def run_backtest(
     return _stats(ticker, df, scores, trades, direction, period, interval)
 
 
+def optimize(ticker: str, period: str = "2y", direction: str = "long") -> dict:
+    """Small grid search over signal thresholds and ATR exits.
+
+    Deliberately coarse: a fine grid on one ticker's history is curve-fitting,
+    not research. Configs need at least 8 trades to qualify.
+    """
+    results = []
+    for buy_th in (15, 20, 25, 30):
+        for stop in (1.0, 1.5, 2.0):
+            for target in (2.0, 3.0, 4.0):
+                r = run_backtest(ticker, period, "1d", buy_th, -15, stop, target, 15, direction)
+                if r["num_trades"] >= 8:
+                    results.append({
+                        "buy_threshold": buy_th, "stop_atr": stop, "target_atr": target,
+                        "num_trades": r["num_trades"], "win_rate": r["win_rate"],
+                        "profit_factor": r["profit_factor"],
+                        "expectancy_pct": r["expectancy_pct"],
+                        "total_return_pct": r["total_return_pct"],
+                        "max_drawdown_pct": r["max_drawdown_pct"],
+                    })
+    results.sort(key=lambda x: -(x["expectancy_pct"] or -999))
+    return {
+        "ticker": ticker.upper(),
+        "period": period,
+        "direction": direction,
+        "tested": 36,
+        "qualified": len(results),
+        "top": results[:5],
+        "warning": ("Optimized settings are fitted to THIS ticker's past — expect worse results "
+                    "live. Prefer settings that also score well on other tickers, and distrust "
+                    "any config whose neighbors in the grid perform much worse."),
+    }
+
+
 def _stats(ticker, df, scores, trades, direction, period, interval) -> dict:
     rets = np.array([t["return_pct"] / 100 for t in trades])
     wins = rets[rets > 0]

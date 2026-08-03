@@ -168,6 +168,7 @@ function activeTab() {
 
 function loadTab(name) {
   if (name === "dashboard") loadWatchlist();
+  if (name === "scanner") loadScanner();
   if (name === "analyze") loadAnalysis();
   if (name === "options") loadOptions();
   if (name === "backtest") { $("#bt-ticker").textContent = currentTicker; }
@@ -224,6 +225,7 @@ async function loadAgent(ticker) {
         <span class="score-big ${sig.score >= 0 ? "up" : "down"}">${sig.score >= 0 ? "+" : ""}${sig.score}</span>
         <span class="pill ${pillClass(sig.label)}">${sig.label}</span>
         <span class="pill ${pillClass(rec.bias || "NO-TRADE")}">Options bias: ${rec.bias || "n/a"}</span>
+        ${d.confluence ? `<span class="${d.confluence.state === "agree" ? "up" : d.confluence.state === "conflict" ? "down" : "muted"}">weekly: ${d.confluence.weekly_label} (${d.confluence.state})</span>` : ""}
         <span class="muted">price ${fmt$(d.quote.price)} (${d.quote.change_pct >= 0 ? "+" : ""}${d.quote.change_pct?.toFixed(2)}%)</span>
       </div>
       ${(rec.warnings || []).map(w => `<div class="warn-box">⚠ ${w}</div>`).join("")}
@@ -235,7 +237,14 @@ async function loadAgent(ticker) {
         <div class="tile"><div class="k">Max pain</div><div class="v">${opt.max_pain ?? "–"}</div></div>
         <div class="tile"><div class="k">Backtest win rate</div><div class="v">${bt.win_rate ?? "–"}%</div></div>
         <div class="tile"><div class="k">Profit factor</div><div class="v">${bt.profit_factor ?? "–"}</div></div>
+        ${d.scorecard?.buy?.count ? `<div class="tile"><div class="k">Buy-signal track record (3y)</div>
+          <div class="v ${d.scorecard.buy.win_rate >= 55 ? "up" : d.scorecard.buy.win_rate <= 45 ? "down" : ""}">${d.scorecard.buy.win_rate}%</div>
+          <div class="muted">${d.scorecard.buy.count} signals</div></div>` : ""}
+        ${opt.iv_context ? `<div class="tile"><div class="k">IV context</div><div class="v">${opt.iv_context.label}</div>
+          <div class="muted">${opt.iv_context.percentile}th pctile vs realized</div></div>` : ""}
       </div>
+      ${rec.spread ? `<p><b>Defined-risk alternative — ${rec.spread.name}:</b> buy $${rec.spread.buy_strike} / sell $${rec.spread.sell_strike},
+        max loss ${fmt$(rec.spread.max_loss)}, max profit ${fmt$(rec.spread.max_profit)} (${rec.spread.reward_risk}:1), breakeven ${rec.spread.breakeven}</p>` : ""}
       ${rec.suggestion ? `<p><b>Suggested contract:</b> ${rec.suggestion.action} ${d.ticker} $${rec.suggestion.strike} exp ${rec.suggestion.expiry}
         (~${rec.suggestion.dte} DTE, Δ ${rec.suggestion.delta}, IV ${rec.suggestion.iv}%, mid ≈ ${fmt$(rec.suggestion.est_mid_price)})<br>
         <span class="muted">${rec.suggestion.note}</span></p>` : ""}
@@ -251,6 +260,82 @@ async function loadAgent(ticker) {
     box.innerHTML = `<p class="err">Agent brief failed: ${e.message}</p>`;
   }
 }
+
+/* ---------------- scanner + calendar + alerts ---------------- */
+
+async function loadScanner() {
+  try {
+    const d = await api("/api/scan");
+    $("#scan-table tbody").innerHTML = d.setups.map((s, i) => s.error
+      ? `<tr><td>${i + 1}</td><td>${s.ticker}</td><td colspan="8" class="err">${s.error}</td></tr>`
+      : `<tr class="scan-row" data-t="${s.ticker}">
+        <td>${i + 1}</td><td><b>${s.ticker}</b></td><td>${fmt$(s.close)}</td>
+        <td class="${s.score >= 0 ? "up" : "down"}">${s.score >= 0 ? "+" : ""}${s.score}</td>
+        <td><span class="pill ${pillClass(s.label)}">${s.label}</span></td>
+        <td class="muted">${s.weekly_label}</td>
+        <td>${s.confluence === "agree" ? '<span class="up">✔ agree</span>'
+            : s.confluence === "conflict" ? '<span class="down">✖ conflict</span>' : '<span class="muted">mixed</span>'}</td>
+        <td>${s.crossed_buy ? '<span class="pill BUY">BUY cross</span>'
+            : s.crossed_sell ? '<span class="pill SELL">SELL cross</span>' : ""}</td>
+        <td class="${s.earnings_in_days !== null && s.earnings_in_days <= 7 ? "warn-text" : "muted"}">${s.earnings_in_days ?? "–"}${s.earnings_in_days !== null ? "d" : ""}</td>
+        <td>${s.rank}</td></tr>`).join("");
+    document.querySelectorAll(".scan-row").forEach(r => r.addEventListener("click", () => {
+      currentTicker = r.dataset.t; $("#ticker-input").value = currentTicker; switchTab("analyze");
+    }));
+    $("#scan-note").textContent = d.note;
+    $("#scan-updated").textContent = "generated " + d.generated_at;
+  } catch (e) {
+    $("#scan-table tbody").innerHTML = `<tr><td colspan="10" class="err">${e.message}</td></tr>`;
+  }
+  try {
+    const c = await api("/api/calendar");
+    $("#cal-table tbody").innerHTML = c.events.length ? c.events.map(ev =>
+      `<tr><td>${ev.date}</td><td class="${ev.in_days <= 3 ? "warn-text" : ""}">${ev.in_days}d</td>
+       <td><b>${ev.kind}</b></td><td class="muted">${ev.why}</td></tr>`).join("")
+      : `<tr><td colspan="4" class="muted">Nothing scheduled in this window.</td></tr>`;
+  } catch (e) { /* calendar is best-effort */ }
+  renderAlerts();
+}
+
+let alertsCache = [];
+
+async function pollAlerts() {
+  try {
+    const seen = parseInt(localStorage.getItem("lastAlertSeen") || "0", 10);
+    const d = await api("/api/alerts?since_id=0");
+    alertsCache = d.alerts;
+    const unseen = alertsCache.filter(a => a.id > seen);
+    $("#bell-count").textContent = unseen.length;
+    $("#bell-count").hidden = unseen.length === 0;
+    const notified = parseInt(localStorage.getItem("lastAlertNotified") || "0", 10);
+    const fresh = alertsCache.filter(a => a.id > notified);
+    if (fresh.length && "Notification" in window && Notification.permission === "granted") {
+      fresh.slice(0, 3).forEach(a =>
+        new Notification("⚡ " + (a.ticker || "Market"), { body: a.message, icon: "/static/icon-192.png" }));
+      localStorage.setItem("lastAlertNotified", String(Math.max(...fresh.map(a => a.id))));
+    }
+    if (activeTab() === "scanner") renderAlerts();
+  } catch (e) { /* poll again later */ }
+}
+
+function renderAlerts() {
+  if (!alertsCache.length) return;
+  $("#alerts-list").innerHTML = alertsCache.slice(0, 30).map(a =>
+    `<div class="news-item"><span class="dot ${a.kind.includes("sell") || a.kind.includes("position") ? "dot-neg" : "dot-pos"}"></span>
+     <span>${a.message}</span><span class="news-meta">${a.created_at} UTC</span></div>`).join("");
+}
+
+$("#bell").addEventListener("click", () => {
+  if (alertsCache.length) localStorage.setItem("lastAlertSeen", String(Math.max(...alertsCache.map(a => a.id))));
+  $("#bell-count").hidden = true;
+  switchTab("scanner");
+});
+
+$("#alerts-notify-btn").addEventListener("click", async () => {
+  if (!("Notification" in window)) return alert("This browser doesn't support notifications.");
+  const p = await Notification.requestPermission();
+  $("#alerts-notify-btn").textContent = p === "granted" ? "✔ Notifications on" : "Notifications blocked";
+});
 
 /* ---------------- analyze ---------------- */
 
@@ -282,11 +367,33 @@ async function loadAnalysis() {
        <td class="${v.score >= 0 ? "up" : "down"}">${v.score >= 0 ? "+" : ""}${v.score}</td>
        <td class="muted">${v.reason}</td></tr>`).join("");
     $("#an-updated").textContent = "updated " + new Date().toLocaleTimeString();
+    loadScorecard();
   } catch (e) {
     $("#an-signal").innerHTML = `<span class="err">${e.message}</span>`;
   }
 }
 $("#an-period").addEventListener("change", loadAnalysis);
+
+async function loadScorecard() {
+  const box = $("#scorecard-box");
+  box.innerHTML = `<p class="spin">Grading 3 years of this signal's own calls…</p>`;
+  try {
+    const d = await api(`/api/scorecard/${currentTicker}`);
+    const row = (name, s) => s.count
+      ? `<div class="tile"><div class="k">${name} (${s.count} signals)</div>
+         <div class="v ${s.win_rate >= 55 ? "up" : s.win_rate <= 45 ? "down" : ""}">${s.win_rate}% win</div>
+         <div class="muted">avg ${s.avg_fwd_return_pct >= 0 ? "+" : ""}${s.avg_fwd_return_pct}% over ${d.horizon_days} bars</div></div>`
+      : `<div class="tile"><div class="k">${name}</div><div class="v muted">no signals</div></div>`;
+    box.innerHTML = `<div class="tiles">${row("BUY crossings", d.buy_signals)}${row("SELL crossings", d.sell_signals)}</div>
+      ${d.buy_signals.recent.length ? `<table><thead><tr><th>Date</th><th>Score</th><th>Fwd return</th><th>Result</th></tr></thead>
+      <tbody>${d.buy_signals.recent.map(e => `<tr><td>${e.date}</td><td>+${e.score}</td>
+        <td class="${e.fwd_return_pct >= 0 ? "up" : "down"}">${e.fwd_return_pct >= 0 ? "+" : ""}${e.fwd_return_pct}%</td>
+        <td>${e.win ? '<span class="up">✔ win</span>' : '<span class="down">✖ loss</span>'}</td></tr>`).join("")}</tbody></table>` : ""}
+      <p class="muted">${d.note}</p>`;
+  } catch (e) {
+    box.innerHTML = `<p class="err">${e.message}</p>`;
+  }
+}
 
 /* ---------------- options ---------------- */
 
@@ -310,6 +417,12 @@ async function loadOptions(expiry) {
       ${rec.suggestion ? `<p><b>${rec.suggestion.action}</b> $${rec.suggestion.strike} exp ${rec.suggestion.expiry}
         — Δ ${rec.suggestion.delta}, Θ ${rec.suggestion.theta}/day, IV ${rec.suggestion.iv}%, mid ≈ ${fmt$(rec.suggestion.est_mid_price)}<br>
         <span class="muted">${rec.suggestion.note}</span></p>` : ""}
+      ${rec.spread ? `<p><b>Defined-risk alternative — ${rec.spread.name}:</b>
+        buy $${rec.spread.buy_strike} / sell $${rec.spread.sell_strike} for ≈ ${fmt$(rec.spread.net_debit)} debit.
+        Max loss ${fmt$(rec.spread.max_loss)}, max profit ${fmt$(rec.spread.max_profit)}
+        (${rec.spread.reward_risk}:1), breakeven ${rec.spread.breakeven}.<br>
+        <span class="muted">${rec.spread.note}</span></p>` : ""}
+      ${d.iv_context ? `<p class="muted">IV context: ${d.iv_context.note}</p>` : ""}
       <ul class="reasons">${rec.reasons.map(r => `<li>${r}</li>`).join("")}</ul>`;
 
     $("#op-metrics").innerHTML = [
@@ -321,6 +434,7 @@ async function loadOptions(expiry) {
       ["P/C ratio (vol)", d.put_call_ratio_volume ?? "–"],
       ["P/C ratio (OI)", d.put_call_ratio_oi ?? "–"],
       ["IV skew", (d.iv_skew ?? "–") + " pts"],
+      ["IV context", d.iv_context ? `${d.iv_context.label} (${d.iv_context.percentile}%)` : "–"],
       ["Max pain", d.max_pain ?? "–"],
     ].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
 
@@ -386,6 +500,31 @@ async function runBacktest() {
   }
 }
 
+/* ---------------- backtest optimizer ---------------- */
+
+$("#bt-optimize").addEventListener("click", async () => {
+  $("#bt-ticker").textContent = currentTicker;
+  $("#bt-opt-box").hidden = false;
+  $("#bt-opt-table tbody").innerHTML = `<tr><td colspan="10" class="spin">Testing 36 configurations…</td></tr>`;
+  try {
+    const d = await api(`/api/optimize/${currentTicker}?period=${$("#bt-period").value}&direction=${$("#bt-dir").value}`);
+    $("#bt-opt-table tbody").innerHTML = d.top.length ? d.top.map(r => `
+      <tr><td>${r.buy_threshold}</td><td>${r.stop_atr}</td><td>${r.target_atr}</td>
+      <td>${r.num_trades}</td><td>${r.win_rate}%</td><td>${r.profit_factor ?? "–"}</td>
+      <td class="${r.expectancy_pct >= 0 ? "up" : "down"}">${r.expectancy_pct}%</td>
+      <td>${r.total_return_pct}%</td><td>${r.max_drawdown_pct}%</td>
+      <td><button class="use-cfg" data-b="${r.buy_threshold}" data-s="${r.stop_atr}" data-t="${r.target_atr}">Use</button></td></tr>`).join("")
+      : `<tr><td colspan="10" class="muted">No configuration produced ≥8 trades — try a longer period.</td></tr>`;
+    $("#bt-opt-warning").textContent = d.warning;
+    document.querySelectorAll(".use-cfg").forEach(b => b.addEventListener("click", () => {
+      $("#bt-buy").value = b.dataset.b; $("#bt-stop").value = b.dataset.s; $("#bt-target").value = b.dataset.t;
+      runBacktest();
+    }));
+  } catch (e) {
+    $("#bt-opt-table tbody").innerHTML = `<tr><td colspan="10" class="err">${e.message}</td></tr>`;
+  }
+});
+
 /* ---------------- news ---------------- */
 
 let newsItems = [];
@@ -407,13 +546,23 @@ function renderNews() {
     neutral: $("#news-neu").checked,
     negative: $("#news-neg").checked,
   };
-  $("#news-list").innerHTML = newsItems.filter(n => show[n.sentiment]).map(n =>
-    `<div class="news-item"><span class="dot dot-${n.sentiment === "positive" ? "pos" : n.sentiment === "negative" ? "neg" : "neu"}"></span>
-     <a href="${n.link}" target="_blank" rel="noopener">${n.title}</a>
-     <span class="news-meta">${n.source} · ${n.published_str} UTC</span></div>`).join("")
+  const tk = $("#news-ticker").value;
+  const mentioned = [...new Set(newsItems.flatMap(n => n.tickers || []))].sort();
+  const sel = $("#news-ticker");
+  if (sel.options.length !== mentioned.length + 1) {
+    sel.innerHTML = `<option value="">All</option>` +
+      mentioned.map(t => `<option ${t === tk ? "selected" : ""}>${t}</option>`).join("");
+  }
+  $("#news-list").innerHTML = newsItems
+    .filter(n => show[n.sentiment] && (!tk || (n.tickers || []).includes(tk)))
+    .map(n =>
+      `<div class="news-item"><span class="dot dot-${n.sentiment === "positive" ? "pos" : n.sentiment === "negative" ? "neg" : "neu"}"></span>
+       <a href="${n.link}" target="_blank" rel="noopener">${n.title}</a>
+       ${(n.tickers || []).map(t => `<span class="chip">${t}</span>`).join("")}
+       <span class="news-meta">${n.source} · ${n.published_str} UTC</span></div>`).join("")
     || `<p class="muted">Nothing matches the current filters.</p>`;
 }
-["news-pos", "news-neu", "news-neg"].forEach(id => $("#" + id).addEventListener("change", renderNews));
+["news-pos", "news-neu", "news-neg", "news-ticker"].forEach(id => $("#" + id).addEventListener("change", renderNews));
 
 /* ---------------- journal ---------------- */
 
@@ -432,6 +581,9 @@ async function loadJournal() {
   $("#j-main").style.display = "";
   $("#j-logout").hidden = false;
   $("#j-user").textContent = "signed in as " + user.username;
+  loadPositions();
+  loadInsights();
+  pollAlerts();
   try {
     const [stats, list] = await Promise.all([api("/api/journal/stats"), api("/api/journal")]);
     $("#j-stats").innerHTML = [
@@ -484,6 +636,57 @@ $("#j-form").addEventListener("submit", async (e) => {
   else alert("Save failed: " + ((await r.json()).detail || r.statusText));
 });
 
+/* ---------------- live positions + coach ---------------- */
+
+async function loadPositions() {
+  try {
+    const d = await api("/api/positions");
+    const t = d.totals;
+    $("#pos-totals").innerHTML = [
+      ["Cost basis", fmt$(t.cost_basis)],
+      ["Market value", fmt$(t.market_value)],
+      ["Unrealized P&L", fmt$(t.unrealized_pnl)],
+      ["Portfolio Δ (shares)", t.delta_shares],
+      ["Portfolio Θ ($/day)", t.theta_per_day],
+    ].map(([k, v]) => `<div class="tile"><div class="k">${k}</div>
+      <div class="v ${typeof v === "string" && v.startsWith("-") ? "down" : ""}">${v}</div></div>`).join("");
+    $("#pos-table tbody").innerHTML = d.positions.length ? d.positions.map(p => `
+      <tr><td><b>${p.ticker}</b></td>
+      <td>${p.direction === "short" ? "short " : ""}${p.quantity}x ${p.instrument}${p.strike ? " $" + p.strike : ""}${p.expiry ? " " + p.expiry : ""}</td>
+      <td>${fmt$(p.entry_price)}</td><td>${p.mark !== null ? fmt$(p.mark) : '<span class="muted">n/a</span>'}</td>
+      <td class="${(p.unrealized_pnl ?? 0) >= 0 ? "up" : "down"}">${p.unrealized_pnl !== null ? fmt$(p.unrealized_pnl) : "–"}</td>
+      <td class="${(p.unrealized_pnl_pct ?? 0) >= 0 ? "up" : "down"}">${p.unrealized_pnl_pct !== null ? p.unrealized_pnl_pct + "%" : "–"}</td>
+      <td>${p.delta_shares ?? "–"}</td><td>${p.theta_per_day ?? "–"}</td>
+      <td class="${p.dte !== null && p.dte <= 7 ? "warn-text" : ""}">${p.dte ?? "–"}</td>
+      <td class="warn-text">${p.flags.join("; ")}</td></tr>`).join("")
+      : `<tr><td colspan="10" class="muted">No open positions — log an entry below and leave the exit blank.</td></tr>`;
+    $("#pos-note").textContent = d.note;
+    $("#pos-updated").textContent = "· updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    $("#pos-table tbody").innerHTML = `<tr><td colspan="10" class="err">${e.message}</td></tr>`;
+  }
+}
+
+async function loadInsights() {
+  try {
+    const d = await api("/api/journal/insights");
+    const bucketRows = (obj) => Object.entries(obj)
+      .filter(([, v]) => v.count > 0)
+      .map(([k, v]) => `<tr><td>${k}</td><td>${v.count}</td><td>${v.win_rate ?? "–"}%</td>
+        <td class="${v.total_pnl >= 0 ? "up" : "down"}">${fmt$(v.total_pnl)}</td></tr>`).join("");
+    $("#j-insights").innerHTML = `
+      <ul class="reasons">${d.findings.map(f => `<li>${f}</li>`).join("")}</ul>
+      <div class="grid2" style="margin-top:10px">
+        <table><thead><tr><th>By type</th><th>Trades</th><th>Win rate</th><th>P&L</th></tr></thead>
+          <tbody>${bucketRows(d.by_instrument) || '<tr><td colspan="4" class="muted">–</td></tr>'}</tbody></table>
+        <table><thead><tr><th>By holding period</th><th>Trades</th><th>Win rate</th><th>P&L</th></tr></thead>
+          <tbody>${bucketRows(d.by_holding_period) || '<tr><td colspan="4" class="muted">–</td></tr>'}</tbody></table>
+      </div>`;
+  } catch (e) {
+    $("#j-insights").innerHTML = `<p class="err">${e.message}</p>`;
+  }
+}
+
 /* ---------------- journal auth ---------------- */
 
 $("#j-auth-form").addEventListener("submit", async (e) => {
@@ -521,9 +724,15 @@ setInterval(() => {
   else if (tab === "options") loadOptions($("#op-expiry").value || undefined);
 }, 30000);
 setInterval(() => { if (activeTab() === "news") loadNews(); }, 180000);
+setInterval(pollAlerts, 60000);
+setInterval(() => { if (activeTab() === "scanner") loadScanner(); }, 300000);
+setInterval(() => {
+  if (activeTab() === "journal" && !$("#j-main").style.display) loadPositions();
+}, 60000);
 
 /* ---------------- boot ---------------- */
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 loadWatchlist();
 loadNews();
+pollAlerts();
