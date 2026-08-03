@@ -135,8 +135,13 @@ const fmtNum = (v) => typeof v === "number" ? (Math.abs(v) >= 100 ? v.toFixed(2)
 const fmt$ = (v) => v === null || v === undefined ? "–" : (v < 0 ? "-$" : "$") + Math.abs(v).toFixed(2);
 const pillClass = (label) => (label || "").replace(/ /g, "-");
 
+function authHeaders() {
+  const t = localStorage.getItem("jtoken");
+  return t ? { "X-Auth-Token": t } : {};
+}
+
 async function api(path) {
-  const r = await fetch(path);
+  const r = await fetch(path, { headers: authHeaders() });
   if (!r.ok) {
     let msg = r.statusText;
     try { msg = (await r.json()).detail || msg; } catch {}
@@ -413,6 +418,20 @@ function renderNews() {
 /* ---------------- journal ---------------- */
 
 async function loadJournal() {
+  // Per-user journal: require a signed-in account first.
+  const me = await fetch("/api/auth/me", { headers: authHeaders() });
+  if (!me.ok) {
+    $("#j-auth").hidden = false;
+    $("#j-main").style.display = "none";
+    $("#j-logout").hidden = true;
+    $("#j-user").textContent = "";
+    return;
+  }
+  const user = await me.json();
+  $("#j-auth").hidden = true;
+  $("#j-main").style.display = "";
+  $("#j-logout").hidden = false;
+  $("#j-user").textContent = "signed in as " + user.username;
   try {
     const [stats, list] = await Promise.all([api("/api/journal/stats"), api("/api/journal")]);
     $("#j-stats").innerHTML = [
@@ -441,7 +460,7 @@ async function loadJournal() {
       <td><button class="del-btn" data-id="${t.id}" title="Delete">✕</button></td></tr>`).join("")
       || `<tr><td colspan="11" class="muted">No trades logged yet — add your first above.</td></tr>`;
     document.querySelectorAll(".del-btn").forEach(b => b.addEventListener("click", async () => {
-      if (confirm("Delete this trade?")) { await fetch("/api/journal/" + b.dataset.id, { method: "DELETE" }); loadJournal(); }
+      if (confirm("Delete this trade?")) { await fetch("/api/journal/" + b.dataset.id, { method: "DELETE", headers: authHeaders() }); loadJournal(); }
     }));
   } catch (e) {
     $("#j-stats").innerHTML = `<div class="err">${e.message}</div>`;
@@ -457,10 +476,40 @@ $("#j-form").addEventListener("submit", async (e) => {
     body[k] = ["quantity", "strike", "entry_price", "exit_price"].includes(k) ? parseFloat(v) : v;
   }
   const r = await fetch("/api/journal", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
   });
   if (r.ok) { e.target.reset(); loadJournal(); }
   else alert("Save failed: " + ((await r.json()).detail || r.statusText));
+});
+
+/* ---------------- journal auth ---------------- */
+
+$("#j-auth-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const mode = e.submitter?.dataset.mode || "login";
+  const fd = new FormData(e.target);
+  const r = await fetch("/api/auth/" + mode, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: fd.get("username"), password: fd.get("password") }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok) {
+    localStorage.setItem("jtoken", d.token);
+    $("#j-auth-msg").textContent = "";
+    e.target.reset();
+    loadJournal();
+  } else {
+    $("#j-auth-msg").textContent = d.detail || r.statusText;
+  }
+});
+
+$("#j-logout").addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST", headers: authHeaders() });
+  localStorage.removeItem("jtoken");
+  loadJournal();
 });
 
 /* ---------------- auto refresh ---------------- */

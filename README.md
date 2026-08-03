@@ -43,7 +43,7 @@ public RSS feeds — no API keys needed).
 | **Options** | Full chain for any expiry with computed Black-Scholes greeks (Δ/Θ), put/call ratios, ATM IV, expected move, IV skew, max pain, unusual-activity scanner, and a **CALL / PUT / NO TRADE** recommendation with a suggested ~0.35-delta contract. |
 | **Backtest** | Tests the exact signal shown live over 1-5 years with configurable thresholds, ATR stop/target, and holding period. Reports win rate, profit factor, expectancy, drawdown, equity curve, per-trade log, and an option-proxy return. |
 | **Tech News** | Live headlines merged from CNBC, TechCrunch, The Verge, Ars Technica, Wired, MarketWatch, Yahoo Finance, Investing.com, Seeking Alpha, and Engadget, deduped, sentiment-tagged, filterable, auto-refreshing every 3 min. |
-| **Journal** | Log entries/exits (options or stock). P&L is computed automatically (×100 per options contract), with win rate, profit factor, avg win/loss, per-ticker P&L and a cumulative P&L curve. Stored locally in `journal.db` (SQLite). |
+| **Journal** | Per-user trade journals: create an account (username + password) and log entries/exits (options or stock). P&L is computed automatically (×100 per options contract), with win rate, profit factor, avg win/loss, per-ticker P&L and a cumulative P&L curve — each user sees only their own trades. Stored locally in `journal.db` (SQLite, passwords PBKDF2-hashed). |
 | **Learn** | Options 101 for beginners: what calls/puts are, the greeks, IV & IV crush, starter strategies, risk rules, common mistakes — plus curated free videos and courses (OIC, Cboe, Investopedia, YouTube topics) with a suggested learning path. |
 
 The app also tracks **earnings dates**: the Options tab and Agent brief show the
@@ -118,16 +118,19 @@ blueprint and a `Dockerfile`:
 General → Danger Zone → Change visibility) so anyone can download and run
 their own copy — each person then gets their own private journal.
 
-**Before you share, know these two caveats:**
+**Before you share, know these caveats:**
 
-- **One shared journal.** The app has a single trade journal with no user
-  accounts — anyone with access sees and can edit the same trades. Set the
-  `APP_PASSWORD` environment variable to require a password (any username,
-  that password) so strangers can't reach your data; for a group of friends,
-  better to have each person run their own copy.
+- **Journals are per-account.** Each person creates their own username +
+  password in the Journal tab and sees only their own trades. (Trades logged
+  before accounts existed are adopted by the first account created.) You can
+  additionally set the `APP_PASSWORD` environment variable to gate the whole
+  site behind one shared password — useful to keep strangers off a public URL.
 - **Hosted journals can reset.** On free hosts the disk is ephemeral —
-  `journal.db` is wiped on redeploys/restarts. Keep the journal on a computer
-  you own if the history matters (it does).
+  `journal.db` (accounts and trades) is wiped on redeploys/restarts. Keep the
+  journal on a computer you own if the history matters (it does).
+- **Use unique passwords.** Accounts are hashed properly (PBKDF2), but this is
+  a hobby app served over whatever transport you give it — don't reuse a
+  password you care about, and prefer hosts that provide HTTPS (Render does).
 
 ## Data sources
 
