@@ -121,7 +121,23 @@
 
   <!-- JOURNAL -->
   <section id="tab-journal" class="tab">
-    <div class="section-head"><h2>Trade journal &amp; P&amp;L</h2></div>
+    <div class="section-head"><h2>Trade journal &amp; P&amp;L</h2>
+      <span id="j-user" class="muted"></span>
+      <button id="j-logout" hidden>Sign out</button>
+    </div>
+    <div id="j-auth" class="card" hidden>
+      <h3>Sign in — every user gets their own private journal</h3>
+      <p class="muted">Trades, P&amp;L and stats are stored per account. Create an account with any
+      username and a password (4+ characters). You stay signed in on this browser.</p>
+      <form id="j-auth-form" class="controls-row">
+        <label>Username <input name="username" required autocomplete="username" style="width:140px"></label>
+        <label>Password <input name="password" type="password" required autocomplete="current-password" style="width:140px"></label>
+        <button type="submit" data-mode="login">Sign in</button>
+        <button type="submit" data-mode="register">Create account</button>
+        <span id="j-auth-msg" class="err"></span>
+      </form>
+    </div>
+    <div id="j-main">
     <div id="j-stats" class="tiles"></div>
     <div class="card"><h3>Cumulative realized P&amp;L ($)</h3><canvas id="chart-pnl" height="200"></canvas></div>
     <div class="card">
@@ -144,6 +160,7 @@
     <div class="card"><h3>Trades</h3><div class="scroll"><table id="j-table">
       <thead><tr><th>Ticker</th><th>Type</th><th>Qty</th><th>Strike</th><th>Entry</th><th>Entry date</th><th>Exit</th><th>Exit date</th><th>P&amp;L $</th><th>Setup</th><th></th></tr></thead><tbody></tbody>
     </table></div></div>
+    </div><!-- /j-main -->
   </section>
   <!-- LEARN -->
   <section id="tab-learn" class="tab">

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -251,35 +251,78 @@ class TradeUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-# ---------- Journal ----------
+# ---------- Accounts (per-user journals) ----------
+# Journal auth uses the X-Auth-Token header (not Authorization) so it can
+# coexist with the optional site-wide APP_PASSWORD basic-auth gate.
+
+class AuthIn(BaseModel):
+    username: str
+    password: str
+
+
+def current_user(x_auth_token: str = Header(default="")) -> dict:
+    user = journal.user_for_token(x_auth_token)
+    if not user:
+        raise HTTPException(401, "login required")
+    return user
+
+
+@app.post("/api/auth/register")
+def auth_register(a: AuthIn):
+    try:
+        return journal.register(a.username, a.password)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/auth/login")
+def auth_login(a: AuthIn):
+    try:
+        return journal.login(a.username, a.password)
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+
+@app.post("/api/auth/logout")
+def auth_logout(x_auth_token: str = Header(default="")):
+    journal.logout(x_auth_token)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def auth_me(user: dict = Depends(current_user)):
+    return user
+
+
+# ---------- Journal (scoped to the signed-in user) ----------
 
 @app.get("/api/journal")
-def journal_list(status: Optional[str] = None):
-    return {"trades": journal.list_trades(status)}
+def journal_list(status: Optional[str] = None, user: dict = Depends(current_user)):
+    return {"trades": journal.list_trades(user["id"], status)}
 
 
 @app.post("/api/journal")
-def journal_add(t: TradeIn):
-    return journal.add_trade(t.model_dump())
+def journal_add(t: TradeIn, user: dict = Depends(current_user)):
+    return journal.add_trade(t.model_dump(), user["id"])
 
 
 @app.patch("/api/journal/{trade_id}")
-def journal_update(trade_id: int, t: TradeUpdate):
+def journal_update(trade_id: int, t: TradeUpdate, user: dict = Depends(current_user)):
     try:
-        return journal.update_trade(trade_id, t.model_dump(exclude_unset=True))
+        return journal.update_trade(trade_id, t.model_dump(exclude_unset=True), user["id"])
     except KeyError:
         raise HTTPException(404, "trade not found")
 
 
 @app.delete("/api/journal/{trade_id}")
-def journal_delete(trade_id: int):
-    journal.delete_trade(trade_id)
+def journal_delete(trade_id: int, user: dict = Depends(current_user)):
+    journal.delete_trade(trade_id, user["id"])
     return {"ok": True}
 
 
 @app.get("/api/journal/stats")
-def journal_stats():
-    return journal.stats()
+def journal_stats(user: dict = Depends(current_user)):
+    return journal.stats(user["id"])
 
 
 # ---------- Static frontend ----------
