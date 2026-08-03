@@ -41,6 +41,25 @@ NEGATIVE = re.compile(
 _cache: dict[str, tuple[float, list]] = {}
 _lock = threading.Lock()
 
+# Ticker tagging: match watchlist company names/symbols in headlines.
+TICKER_PATTERNS = {
+    "AAPL": r"\b(apple|aapl)\b",
+    "MSFT": r"\b(microsoft|msft)\b",
+    "NVDA": r"\b(nvidia|nvda)\b",
+    "GOOGL": r"\b(google|alphabet|googl?)\b",
+    "AMZN": r"\b(amazon|amzn|aws)\b",
+    "META": r"\b(meta\b|facebook|instagram|whatsapp)",
+    "TSLA": r"\b(tesla|tsla)\b",
+    "AMD": r"\bamd\b",
+    "AVGO": r"\b(broadcom|avgo)\b",
+    "PLTR": r"\b(palantir|pltr)\b",
+}
+_TICKER_RE = {t: re.compile(p, re.I) for t, p in TICKER_PATTERNS.items()}
+
+
+def _tag_tickers(title: str) -> list[str]:
+    return [t for t, rx in _TICKER_RE.items() if rx.search(title)]
+
 
 def _sentiment(title: str) -> str:
     pos = len(POSITIVE.findall(title))
@@ -62,13 +81,15 @@ def _fetch_feed(name: str, url: str) -> list[dict]:
                 if getattr(e, key, None):
                     ts = calendar.timegm(getattr(e, key))
                     break
+            title = e.get("title", "").strip()
             items.append({
                 "source": name,
-                "title": e.get("title", "").strip(),
+                "title": title,
                 "link": e.get("link", ""),
                 "published": ts,
                 "published_str": time.strftime("%Y-%m-%d %H:%M", time.gmtime(ts)) if ts else "",
-                "sentiment": _sentiment(e.get("title", "")),
+                "sentiment": _sentiment(title),
+                "tickers": _tag_tickers(title),
             })
         return items
     except Exception:

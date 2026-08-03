@@ -47,6 +47,15 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_id INTEGER NOT NULL,
     created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,                               -- NULL = broadcast to everyone
+    ticker TEXT,
+    kind TEXT NOT NULL,
+    message TEXT NOT NULL,
+    day TEXT DEFAULT (date('now')),
+    created_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 MULT = {"call": 100, "put": 100, "stock": 1}
@@ -229,4 +238,80 @@ def stats(user_id: int) -> dict:
         "worst_trade": min(pnls) if pnls else None,
         "pnl_by_ticker": by_ticker,
         "equity_curve": curve,
+    }
+
+
+def insights(user_id: int) -> dict:
+    """Journal coach: patterns in the trader's own closed trades."""
+    from datetime import date
+
+    closed = [t for t in list_trades(user_id, "closed") if t["pnl"] is not None]
+
+    def bucket_stats(trades: list[dict]) -> dict:
+        pnls = [t["pnl"] for t in trades]
+        wins = [p for p in pnls if p > 0]
+        return {
+            "count": len(trades),
+            "win_rate": round(len(wins) / len(pnls) * 100, 1) if pnls else None,
+            "total_pnl": round(sum(pnls), 2) if pnls else 0.0,
+        }
+
+    def held_days(t: dict) -> int | None:
+        try:
+            return (date.fromisoformat(t["exit_date"]) - date.fromisoformat(t["entry_date"])).days
+        except (TypeError, ValueError):
+            return None
+
+    by_instrument = {k: bucket_stats([t for t in closed if t["instrument"] == k])
+                     for k in ("call", "put", "stock")}
+    by_direction = {k: bucket_stats([t for t in closed if t["direction"] == k])
+                    for k in ("long", "short")}
+    hold_buckets = {"0-2 days": (0, 2), "3-7 days": (3, 7), "8-14 days": (8, 14), "15+ days": (15, 10**6)}
+    by_holding = {name: bucket_stats([t for t in closed
+                                      if (d := held_days(t)) is not None and lo <= d <= hi])
+                  for name, (lo, hi) in hold_buckets.items()}
+    by_ticker = {}
+    for t in closed:
+        by_ticker.setdefault(t["ticker"], []).append(t)
+    by_ticker = {k: bucket_stats(v) for k, v in by_ticker.items()}
+
+    findings = []
+    if len(closed) < 5:
+        findings.append(f"Only {len(closed)} closed trades so far — log at least 10-20 before "
+                        "treating any pattern here as real.")
+    else:
+        ci, pi = by_instrument["call"], by_instrument["put"]
+        if ci["count"] >= 3 and pi["count"] >= 3 and ci["win_rate"] is not None and pi["win_rate"] is not None:
+            better, worse = ("calls", "puts") if ci["win_rate"] > pi["win_rate"] else ("puts", "calls")
+            gap = abs(ci["win_rate"] - pi["win_rate"])
+            if gap >= 15:
+                findings.append(f"Your {better} win {gap:.0f} points more often than your {worse} — "
+                                f"lean into your edge and size {worse} smaller.")
+        held = {k: v for k, v in by_holding.items() if v["count"] >= 3}
+        if held:
+            best = max(held, key=lambda k: held[k]["total_pnl"])
+            worst = min(held, key=lambda k: held[k]["total_pnl"])
+            if best != worst and held[worst]["total_pnl"] < 0 < held[best]["total_pnl"]:
+                findings.append(f"Trades held {best} made you ${held[best]['total_pnl']:.0f} while "
+                                f"{worst} lost ${-held[worst]['total_pnl']:.0f} — your exits have a "
+                                "sweet spot; respect it.")
+        tick = {k: v for k, v in by_ticker.items() if v["count"] >= 3}
+        if tick:
+            best_t = max(tick, key=lambda k: tick[k]["total_pnl"])
+            worst_t = min(tick, key=lambda k: tick[k]["total_pnl"])
+            if tick[best_t]["total_pnl"] > 0:
+                findings.append(f"{best_t} is your best ticker (${tick[best_t]['total_pnl']:.0f} "
+                                f"across {tick[best_t]['count']} trades).")
+            if best_t != worst_t and tick[worst_t]["total_pnl"] < 0:
+                findings.append(f"{worst_t} keeps costing you money "
+                                f"(${tick[worst_t]['total_pnl']:.0f}) — trade it smaller or not at all.")
+    if not findings:
+        findings.append("No strong patterns yet — keep journaling every trade.")
+
+    return {
+        "by_instrument": by_instrument,
+        "by_direction": by_direction,
+        "by_holding_period": by_holding,
+        "by_ticker": by_ticker,
+        "findings": findings,
     }

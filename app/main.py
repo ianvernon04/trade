@@ -18,11 +18,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import backtest, data, journal, news, options
+from . import (alerts, backtest, calendar_events, data, journal, news, options,
+               positions, scanner, scorecard)
 from .signals import score_frame, score_series
 
 app = FastAPI(title="Options Trading Assistant")
 journal.init()
+alerts.start_background_thread()
 
 # Optional shared password for hosted/shared deployments. When APP_PASSWORD is
 # set, every request must carry HTTP Basic auth with that password (any
@@ -137,6 +139,44 @@ def run_backtest(
         stop_atr, target_atr, max_hold, direction))
 
 
+# ---------- Scanner, scorecard, calendar, alerts ----------
+
+@app.get("/api/scan")
+def morning_scan(tickers: Optional[str] = None):
+    syms = [s.strip().upper() for s in tickers.split(",") if s.strip()] if tickers else None
+    return _safe(lambda: scanner.scan(syms))
+
+
+@app.get("/api/scorecard/{ticker}")
+def get_scorecard(ticker: str, horizon: int = Query(10, ge=2, le=60)):
+    return _safe(lambda: scorecard.signal_scorecard(ticker, horizon=horizon))
+
+
+@app.get("/api/calendar")
+def macro_calendar(days: int = Query(45, ge=1, le=180)):
+    return {"events": calendar_events.upcoming(days),
+            "note": "Approximate published schedules — verify at federalreserve.gov / bls.gov."}
+
+
+@app.get("/api/alerts")
+def get_alerts(since_id: int = 0, x_auth_token: str = Header(default="")):
+    user = journal.user_for_token(x_auth_token)
+    return {"alerts": alerts.list_alerts(since_id, user["id"] if user else None)}
+
+
+@app.post("/api/alerts/check")
+def run_alert_check():
+    alerts.generate_alerts()
+    return {"ok": True}
+
+
+# ---------- Optimizer ----------
+
+@app.get("/api/optimize/{ticker}")
+def optimize(ticker: str, period: str = "2y", direction: str = "long"):
+    return _safe(lambda: backtest.optimize(ticker, period, direction))
+
+
 # ---------- News ----------
 
 @app.get("/api/news")
@@ -164,10 +204,20 @@ def agent(ticker: str):
             "earnings": data.get_earnings_info(ticker),
         }
         try:
+            out["confluence"] = scorecard.confluence(sig, scorecard.weekly_signal(ticker))
+        except Exception:
+            out["confluence"] = None
+        try:
+            sc = scorecard.signal_scorecard(ticker)
+            out["scorecard"] = {"buy": sc["buy_signals"], "sell": sc["sell_signals"],
+                                "horizon_days": sc["horizon_days"]}
+        except Exception:
+            out["scorecard"] = None
+        try:
             chain = options.analyze_chain(ticker)
             out["options"] = {k: chain[k] for k in (
                 "expiry", "dte", "put_call_ratio_volume", "put_call_ratio_oi",
-                "atm_iv", "expected_move", "expected_move_pct", "iv_skew",
+                "atm_iv", "iv_context", "expected_move", "expected_move_pct", "iv_skew",
                 "max_pain", "earnings_before_expiry", "recommendation",
                 "unusual_activity")}
         except Exception as e:
@@ -217,6 +267,29 @@ def _plan(sig: dict, ctx: dict) -> dict:
             "No edge right now — signal is neutral or options flow disagrees with technicals.",
             "Best trade is often no trade: wait for score to cross +/-20 with volume confirmation.",
         ]
+
+    # Context that matters whether or not there's a trade on.
+    conf = ctx.get("confluence")
+    if conf:
+        steps.append(f"Timeframes: {conf['note'].lower()}")
+    sc = ctx.get("scorecard")
+    if sc:
+        kind = "sell" if bias == "PUT" else "buy"
+        side_stats = sc.get(kind)
+        if side_stats and side_stats.get("count"):
+            steps.append(
+                f"Track record: this exact {kind} signal fired {side_stats['count']}x on this "
+                f"ticker over 3y with a {side_stats['win_rate']}% win rate over "
+                f"{sc['horizon_days']} bars — calibrate your confidence accordingly")
+    ivc = (ctx.get("options") or {}).get("iv_context")
+    if ivc and ivc["label"] in ("elevated", "extreme"):
+        steps.append(f"IV is {ivc['label']} ({ivc['percentile']:.0f}th percentile vs realized) "
+                     "— prefer the suggested spread over a naked long option")
+    upcoming = calendar_events.upcoming(10)
+    if upcoming:
+        ev = upcoming[0]
+        steps.append(f"Macro: {ev['kind']} in {ev['in_days']} day(s) ({ev['date']}) — "
+                     "expect volatility around it")
     return {"bias": bias, "steps": steps,
             "disclaimer": "Educational tool, not financial advice. Options can lose 100% of premium."}
 
@@ -323,6 +396,16 @@ def journal_delete(trade_id: int, user: dict = Depends(current_user)):
 @app.get("/api/journal/stats")
 def journal_stats(user: dict = Depends(current_user)):
     return journal.stats(user["id"])
+
+
+@app.get("/api/journal/insights")
+def journal_insights(user: dict = Depends(current_user)):
+    return journal.insights(user["id"])
+
+
+@app.get("/api/positions")
+def live_positions(user: dict = Depends(current_user)):
+    return positions.live_positions(user["id"])
 
 
 # ---------- Static frontend ----------
