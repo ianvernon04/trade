@@ -147,7 +147,15 @@ def analyze_chain(ticker: str, expiry: str | None = None) -> dict:
     hist = data.get_history(ticker, "1y", "1d")
     stock = score_frame(hist)
 
-    rec = _recommend(ticker, spot, stock, pcr_vol, skew, atm_iv, expiry, dte, calls, puts, T)
+    # Earnings timing: options held through a report face IV crush.
+    earnings = data.get_earnings_info(ticker)
+    earnings_before_expiry = (
+        earnings["next_earnings"] is not None
+        and earnings["next_earnings"] <= expiry
+    )
+
+    rec = _recommend(ticker, spot, stock, pcr_vol, skew, atm_iv, expiry, dte, calls, puts, T,
+                     earnings, earnings_before_expiry)
 
     return {
         "ticker": ticker.upper(),
@@ -166,6 +174,8 @@ def analyze_chain(ticker: str, expiry: str | None = None) -> dict:
         "expected_move_pct": round(expected_move / spot * 100, 2) if expected_move else None,
         "iv_skew": skew,
         "max_pain": _max_pain(calls, puts),
+        "earnings": earnings,
+        "earnings_before_expiry": earnings_before_expiry,
         "unusual_activity": unusual[:10],
         "stock_signal": stock,
         "recommendation": rec,
@@ -175,7 +185,7 @@ def analyze_chain(ticker: str, expiry: str | None = None) -> dict:
 
 
 def _recommend(ticker, spot, stock, pcr_vol, skew, atm_iv, expiry, dte,
-               calls, puts, T) -> dict:
+               calls, puts, T, earnings=None, earnings_before_expiry=False) -> dict:
     """Combine stock signal + options sentiment into a call/put suggestion."""
     score = stock["score"]
     reasons = []
@@ -242,11 +252,27 @@ def _recommend(ticker, spot, stock, pcr_vol, skew, atm_iv, expiry, dte,
         reasons.append(f"ATM IV {atm_iv * 100:.0f}% is elevated — options are expensive; "
                        "consider spreads instead of naked long options")
 
+    warnings = []
+    if earnings_before_expiry and earnings:
+        warnings.append(
+            f"EARNINGS {earnings['next_earnings']} ({earnings['days_until']} days away) falls "
+            f"BEFORE this expiry — IV is likely inflated and will crush after the report. "
+            "Long options held through earnings can lose money even when the direction is right. "
+            "Either pick a later expiry, close before the report, or size down and treat it as "
+            "an earnings bet.")
+    elif earnings and earnings.get("days_until") is not None and earnings["days_until"] <= 7:
+        warnings.append(
+            f"Earnings {earnings['next_earnings']} is only {earnings['days_until']} days away "
+            "(after this expiry) — pre-earnings IV drift can still move option prices.")
+    if warnings and suggestion:
+        suggestion["note"] += " ⚠ " + warnings[0]
+
     return {
         "combined_score": round(combined, 1),
         "direction": direction,
         "bias": ("CALL" if side == "call" else "PUT" if side == "put" else "NO TRADE"),
         "reasons": reasons,
+        "warnings": warnings,
         "suggestion": suggestion,
     }
 
