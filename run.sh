@@ -3,5 +3,6 @@
 set -e
 cd "$(dirname "$0")"
 pip install -q -r requirements.txt
-echo "Starting on http://127.0.0.1:8000 ..."
-exec uvicorn app.main:app --host 127.0.0.1 --port "${PORT:-8000}"
+# HOST=0.0.0.0 ./run.sh  shares the app with other devices on your network.
+echo "Starting on http://${HOST:-127.0.0.1}:${PORT:-8000} ..."
+exec uvicorn app.main:app --host "${HOST:-127.0.0.1}" --port "${PORT:-8000}"

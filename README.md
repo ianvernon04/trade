@@ -91,6 +91,44 @@ GET/POST/PATCH/DELETE /api/journal        trade CRUD
 GET  /api/journal/stats                   P&L analytics
 ```
 
+## Sharing it with others
+
+Three ways, from easiest to most public:
+
+**1. Same Wi-Fi / home network.** Start with:
+
+```bash
+HOST=0.0.0.0 ./run.sh        # Mac/Linux
+```
+
+(Windows: `set HOST=0.0.0.0` then run `start.bat`.) Find your computer's local
+IP (`ipconfig` on Windows, `ifconfig`/`ip a` on Mac/Linux — something like
+`192.168.1.23`), and anyone on your network can open `http://192.168.1.23:8000`.
+
+**2. Free cloud hosting (public URL).** The repo ships with a `render.yaml`
+blueprint and a `Dockerfile`:
+
+- [Render](https://render.com): New + → **Blueprint** → select this repo →
+  deploy. You get a `https://….onrender.com` URL anyone can open. Free tier
+  sleeps after idle periods (first hit takes ~30 s to wake).
+- Any Docker host (Railway, Fly.io, a VPS): `docker build -t trade . && docker
+  run -p 8000:8000 trade`.
+
+**3. Sharing the code.** Make the GitHub repo public (repo → Settings →
+General → Danger Zone → Change visibility) so anyone can download and run
+their own copy — each person then gets their own private journal.
+
+**Before you share, know these two caveats:**
+
+- **One shared journal.** The app has a single trade journal with no user
+  accounts — anyone with access sees and can edit the same trades. Set the
+  `APP_PASSWORD` environment variable to require a password (any username,
+  that password) so strangers can't reach your data; for a group of friends,
+  better to have each person run their own copy.
+- **Hosted journals can reset.** On free hosts the disk is ephemeral —
+  `journal.db` is wiped on redeploys/restarts. Keep the journal on a computer
+  you own if the history matters (it does).
+
 ## Data sources
 
 - **Market data & option chains:** Yahoo Finance (via `yfinance`) — quotes,

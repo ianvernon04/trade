@@ -1,0 +1,12 @@
+# One-click deploy blueprint for https://render.com (free tier works).
+# In Render: New + -> Blueprint -> point it at this repository.
+services:
+  - type: web
+    name: options-trading-assistant
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: APP_PASSWORD   # set a value in the Render dashboard to require a login password
+        sync: false

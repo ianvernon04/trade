@@ -6,11 +6,14 @@ Then open  http://127.0.0.1:8000
 
 from __future__ import annotations
 
+import base64
+import os
+import secrets
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -20,6 +23,31 @@ from .signals import score_frame, score_series
 
 app = FastAPI(title="Options Trading Assistant")
 journal.init()
+
+# Optional shared password for hosted/shared deployments. When APP_PASSWORD is
+# set, every request must carry HTTP Basic auth with that password (any
+# username). Unset = open access, the right default for localhost use.
+APP_PASSWORD = os.environ.get("APP_PASSWORD") or None
+
+
+@app.middleware("http")
+async def _basic_auth(request: Request, call_next):
+    if APP_PASSWORD:
+        header = request.headers.get("authorization", "")
+        ok = False
+        if header.startswith("Basic "):
+            try:
+                decoded = base64.b64decode(header[6:]).decode()
+                supplied = decoded.split(":", 1)[1] if ":" in decoded else ""
+                ok = secrets.compare_digest(supplied, APP_PASSWORD)
+            except Exception:
+                ok = False
+        if not ok:
+            return Response(
+                status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="Options Trading Assistant"'},
+            )
+    return await call_next(request)
 
 STATIC = Path(__file__).resolve().parent / "static"
 
