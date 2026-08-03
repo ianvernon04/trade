@@ -524,5 +524,6 @@ setInterval(() => { if (activeTab() === "news") loadNews(); }, 180000);
 
 /* ---------------- boot ---------------- */
 
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 loadWatchlist();
 loadNews();
