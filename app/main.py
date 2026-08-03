@@ -133,13 +133,15 @@ def agent(ticker: str):
             "ticker": ticker.upper(),
             "quote": data.get_quote(ticker),
             "signal": sig,
+            "earnings": data.get_earnings_info(ticker),
         }
         try:
             chain = options.analyze_chain(ticker)
             out["options"] = {k: chain[k] for k in (
                 "expiry", "dte", "put_call_ratio_volume", "put_call_ratio_oi",
                 "atm_iv", "expected_move", "expected_move_pct", "iv_skew",
-                "max_pain", "recommendation", "unusual_activity")}
+                "max_pain", "earnings_before_expiry", "recommendation",
+                "unusual_activity")}
         except Exception as e:
             out["options"] = {"error": str(e)}
         try:
@@ -162,6 +164,8 @@ def _plan(sig: dict, ctx: dict) -> dict:
     label = sig["label"]
     rec = (ctx.get("options") or {}).get("recommendation") or {}
     bias = rec.get("bias", "NO TRADE")
+    earnings = ctx.get("earnings") or {}
+    edays = earnings.get("days_until")
     steps = []
     if bias in ("CALL", "PUT") and label not in ("NEUTRAL",):
         stop = close - 1.5 * a if bias == "CALL" else close + 1.5 * a
@@ -172,8 +176,14 @@ def _plan(sig: dict, ctx: dict) -> dict:
             f"invalidation if stock crosses {stop:.2f} (1.5x ATR), target {target:.2f} (3x ATR)",
             "Position size so max premium loss is 1-2% of account",
             "Prefer 30-45 DTE, ~0.35 delta; take partial profits at +50-100% on the option",
-            "Exit before major binary events (earnings) unless that IS the thesis",
         ]
+        if edays is not None and edays <= 45:
+            steps.append(
+                f"⚠ EARNINGS {earnings['next_earnings']} ({edays} days away): plan to be flat "
+                "before the report, or accept IV-crush risk deliberately — a correct direction "
+                "can still lose money when implied volatility collapses after earnings")
+        else:
+            steps.append("Exit before major binary events (earnings) unless that IS the thesis")
     else:
         steps = [
             "No edge right now — signal is neutral or options flow disagrees with technicals.",

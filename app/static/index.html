@@ -17,6 +17,7 @@
     <button data-tab="backtest">Backtest</button>
     <button data-tab="news">Tech News</button>
     <button data-tab="journal">Journal</button>
+    <button data-tab="learn">Learn</button>
   </nav>
   <div class="ticker-box">
     <input id="ticker-input" value="NVDA" spellcheck="false" autocomplete="off">
@@ -143,6 +144,109 @@
     <div class="card"><h3>Trades</h3><div class="scroll"><table id="j-table">
       <thead><tr><th>Ticker</th><th>Type</th><th>Qty</th><th>Strike</th><th>Entry</th><th>Entry date</th><th>Exit</th><th>Exit date</th><th>P&amp;L $</th><th>Setup</th><th></th></tr></thead><tbody></tbody>
     </table></div></div>
+  </section>
+  <!-- LEARN -->
+  <section id="tab-learn" class="tab">
+    <div class="section-head"><h2>Options 101 — learn before you trade</h2>
+      <span class="muted">start here if calls, puts, and greeks are new to you</span></div>
+
+    <div class="grid2">
+      <div class="card learn">
+        <h3>1 · What an option actually is</h3>
+        <p>An option is a contract on 100 shares of a stock. A <b>call</b> is the right to <i>buy</i>
+        at a fixed price (the <b>strike</b>) before a date (the <b>expiry</b>); you buy calls when you
+        expect the stock to go <span class="up">up</span>. A <b>put</b> is the right to <i>sell</i> at
+        the strike; you buy puts when you expect the stock to go <span class="down">down</span>.
+        The price you pay is the <b>premium</b> — and it is the most you can lose on a long option.</p>
+        <p class="muted">Example: NVDA at $180. A $190 call for $5.00 costs $500 (×100). If NVDA hits
+        $200 before expiry the option is worth ≥ $10.00 (+100%). If NVDA stays under $190 at
+        expiry, it expires worthless (-100%). Most traders sell the option before expiry rather than
+        exercising it.</p>
+      </div>
+      <div class="card learn">
+        <h3>2 · The greeks (this app computes them for you)</h3>
+        <p><b>Delta (Δ)</b> — how much the option moves per $1 move in the stock, and roughly the
+        market's odds it expires in the money. A 0.35-delta call gains ~$0.35 per $1 rally.</p>
+        <p><b>Theta (Θ)</b> — daily time decay. A theta of -0.05 means the option loses ~$5/day per
+        contract just from time passing. Decay accelerates in the last 3 weeks — that's why the app
+        prefers 30-45 DTE.</p>
+        <p><b>Gamma</b> — how fast delta itself changes; <b>Vega</b> — sensitivity to implied
+        volatility (1 vol point ≈ vega in $).</p>
+      </div>
+      <div class="card learn">
+        <h3>3 · Implied volatility &amp; IV crush</h3>
+        <p><b>IV</b> is the market's forecast of how much the stock will move — it's what makes
+        options cheap or expensive. The <b>expected move</b> tile on the Options tab converts IV
+        into a ± dollar range for the chosen expiry.</p>
+        <p><b>IV crush:</b> before earnings, IV (and premiums) inflate; the moment results are out,
+        IV collapses. You can call the direction correctly and <i>still lose money</i> holding a long
+        option through earnings. That's exactly what the app's ⚠ earnings warnings protect you from.</p>
+      </div>
+      <div class="card learn">
+        <h3>4 · Beginner-friendly strategies (in order)</h3>
+        <p><b>Long call / long put</b> — simplest way to trade direction; risk = premium paid.</p>
+        <p><b>Cash-secured put</b> — get paid premium for agreeing to buy a stock you want anyway,
+        at a lower price.</p>
+        <p><b>Covered call</b> — own 100 shares, sell a call against them for income.</p>
+        <p><b>Vertical spreads</b> (buy one option, sell another at a different strike) — cap both
+        risk and reward, and blunt IV/theta. The right upgrade once long options make sense —
+        especially when the app flags elevated IV.</p>
+      </div>
+      <div class="card learn">
+        <h3>5 · Risk rules that keep you alive</h3>
+        <p>· Risk 1-2% of your account per trade, max. Position size = account × 1% ÷ premium.<br>
+        · Never hold long options through earnings unless the earnings bet IS the plan.<br>
+        · Take partials at +50-100%; don't round-trip winners to zero.<br>
+        · Avoid options under 21 DTE while learning — theta eats you.<br>
+        · Avoid illiquid chains: wide bid/ask spreads (&gt;10% of mid) are a hidden tax.<br>
+        · Journal every trade (Journal tab) — your own stats are the best teacher.</p>
+      </div>
+      <div class="card learn">
+        <h3>6 · Common beginner mistakes</h3>
+        <p>· Buying far-OTM weekly "lottery tickets" (delta &lt; 0.10).<br>
+        · Confusing a cheap <i>price</i> with a cheap <i>option</i> (check IV first).<br>
+        · Oversizing because premiums look small — one contract controls 100 shares.<br>
+        · Averaging down on a losing option (theta makes it worse than stock).<br>
+        · Trading the open (9:30-10:00 ET) when spreads are widest.<br>
+        · No exit plan. Decide the stop and target before entry — the Agent brief writes one for you.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Videos &amp; courses worth your time (free, open in a new tab)</h3>
+      <table id="learn-videos">
+        <thead><tr><th>Topic</th><th>Watch / read</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Options basics</td>
+            <td><a href="https://www.youtube.com/results?search_query=options+trading+for+beginners+explained+calls+and+puts" target="_blank" rel="noopener">YouTube: "options trading for beginners — calls and puts"</a></td>
+            <td class="muted">Pick any recent top result with 1M+ views (projectfinance and InTheMoney are consistently clear).</td></tr>
+          <tr><td>The greeks, visually</td>
+            <td><a href="https://www.youtube.com/results?search_query=option+greeks+explained+delta+gamma+theta+vega" target="_blank" rel="noopener">YouTube: "option greeks explained — delta gamma theta vega"</a></td>
+            <td class="muted">Watch one, then open this app's Options tab and find each greek on a real chain.</td></tr>
+          <tr><td>Implied volatility &amp; IV crush</td>
+            <td><a href="https://www.youtube.com/results?search_query=implied+volatility+and+IV+crush+explained" target="_blank" rel="noopener">YouTube: "implied volatility and IV crush explained"</a></td>
+            <td class="muted">The single concept that saves new options traders the most money.</td></tr>
+          <tr><td>Vertical spreads</td>
+            <td><a href="https://www.youtube.com/results?search_query=vertical+spread+options+explained+debit+credit" target="_blank" rel="noopener">YouTube: "vertical spreads explained — debit and credit"</a></td>
+            <td class="muted">Your first defined-risk upgrade from plain calls/puts.</td></tr>
+          <tr><td>Structured free course</td>
+            <td><a href="https://www.optionseducation.org/" target="_blank" rel="noopener">OIC — optionseducation.org</a></td>
+            <td class="muted">The Options Industry Council: free, unbiased, exchange-backed curriculum.</td></tr>
+          <tr><td>Exchange education</td>
+            <td><a href="https://www.cboe.com/education/" target="_blank" rel="noopener">Cboe Options Institute</a></td>
+            <td class="muted">Courses from the exchange that invented listed options.</td></tr>
+          <tr><td>Reference articles</td>
+            <td><a href="https://www.investopedia.com/options-basics-tutorial-4583012" target="_blank" rel="noopener">Investopedia — Options Basics</a></td>
+            <td class="muted">Best for looking up a single term fast.</td></tr>
+          <tr><td>Daily market context</td>
+            <td><a href="https://www.youtube.com/@tastyliveshow" target="_blank" rel="noopener">tastylive (YouTube)</a></td>
+            <td class="muted">Deep library on spreads, IV, and trade mechanics (leans premium-selling).</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Suggested path: basics video → greeks video → IV video → OIC course while
+      paper-trading 10+ setups from this app's Agent brief, journaling each one → spreads video.
+      Links are to searches/institutions rather than single videos so they stay fresh.</p>
+    </div>
   </section>
 </main>
 

@@ -36,6 +36,12 @@ public RSS feeds — no API keys needed).
 | **Backtest** | Tests the exact signal shown live over 1-5 years with configurable thresholds, ATR stop/target, and holding period. Reports win rate, profit factor, expectancy, drawdown, equity curve, per-trade log, and an option-proxy return. |
 | **Tech News** | Live headlines merged from CNBC, TechCrunch, The Verge, Ars Technica, Wired, MarketWatch, Yahoo Finance, Investing.com, Seeking Alpha, and Engadget, deduped, sentiment-tagged, filterable, auto-refreshing every 3 min. |
 | **Journal** | Log entries/exits (options or stock). P&L is computed automatically (×100 per options contract), with win rate, profit factor, avg win/loss, per-ticker P&L and a cumulative P&L curve. Stored locally in `journal.db` (SQLite). |
+| **Learn** | Options 101 for beginners: what calls/puts are, the greeks, IV & IV crush, starter strategies, risk rules, common mistakes — plus curated free videos and courses (OIC, Cboe, Investopedia, YouTube topics) with a suggested learning path. |
+
+The app also tracks **earnings dates**: the Options tab and Agent brief show the
+next report date and raise a ⚠ IV-crush warning whenever earnings land before
+the option expiry you're looking at (or within 7 days), and the trading plan
+tells you to be flat before the report unless the earnings bet is the thesis.
 
 Quotes/signals refresh every 30 s while a tab is open; option chains are cached
 60 s server-side, news 3 min.

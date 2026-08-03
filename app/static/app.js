@@ -221,7 +221,9 @@ async function loadAgent(ticker) {
         <span class="pill ${pillClass(rec.bias || "NO-TRADE")}">Options bias: ${rec.bias || "n/a"}</span>
         <span class="muted">price ${fmt$(d.quote.price)} (${d.quote.change_pct >= 0 ? "+" : ""}${d.quote.change_pct?.toFixed(2)}%)</span>
       </div>
+      ${(rec.warnings || []).map(w => `<div class="warn-box">⚠ ${w}</div>`).join("")}
       <div class="tiles">
+        <div class="tile"><div class="k">Next earnings</div><div class="v ${d.earnings?.days_until != null && d.earnings.days_until <= 14 ? "warn-text" : ""}">${d.earnings?.next_earnings ?? "–"}${d.earnings?.days_until != null ? ` <span class="muted">(${d.earnings.days_until}d)</span>` : ""}</div></div>
         <div class="tile"><div class="k">ATM IV</div><div class="v">${opt.atm_iv ?? "–"}%</div></div>
         <div class="tile"><div class="k">Expected move (${opt.dte ?? "?"} DTE)</div><div class="v">±${opt.expected_move ?? "–"} (${opt.expected_move_pct ?? "–"}%)</div></div>
         <div class="tile"><div class="k">Put/Call vol</div><div class="v">${opt.put_call_ratio_volume ?? "–"}</div></div>
@@ -299,6 +301,7 @@ async function loadOptions(expiry) {
         <span class="score-big ${rec.combined_score >= 0 ? "up" : "down"}">${rec.combined_score >= 0 ? "+" : ""}${rec.combined_score}</span>
         <span class="muted">combined stock + options score</span>
       </div>
+      ${(rec.warnings || []).map(w => `<div class="warn-box">⚠ ${w}</div>`).join("")}
       ${rec.suggestion ? `<p><b>${rec.suggestion.action}</b> $${rec.suggestion.strike} exp ${rec.suggestion.expiry}
         — Δ ${rec.suggestion.delta}, Θ ${rec.suggestion.theta}/day, IV ${rec.suggestion.iv}%, mid ≈ ${fmt$(rec.suggestion.est_mid_price)}<br>
         <span class="muted">${rec.suggestion.note}</span></p>` : ""}
@@ -306,6 +309,8 @@ async function loadOptions(expiry) {
 
     $("#op-metrics").innerHTML = [
       ["Spot", fmt$(d.spot)], ["DTE", d.dte],
+      ["Next earnings", d.earnings?.next_earnings
+        ? `${d.earnings.next_earnings}${d.earnings_before_expiry ? " ⚠" : ""}` : "–"],
       ["ATM IV", (d.atm_iv ?? "–") + "%"],
       ["Expected move", "±" + (d.expected_move ?? "–") + ` (${d.expected_move_pct ?? "–"}%)`],
       ["P/C ratio (vol)", d.put_call_ratio_volume ?? "–"],

@@ -123,3 +123,12 @@ ul.reasons li { margin: 3px 0; }
 .del-btn { background: none; border: none; color: var(--muted); cursor: pointer; }
 .del-btn:hover { color: var(--critical); }
 .spin { color: var(--muted); padding: 20px; }
+.warn-box {
+  background: rgba(250, 178, 25, 0.12); border: 1px solid rgba(250, 178, 25, 0.45);
+  color: var(--warning); border-radius: 8px; padding: 10px 12px; margin: 10px 0;
+  font-size: 13px;
+}
+.warn-text { color: var(--warning); }
+.learn p { color: var(--ink-2); margin: 8px 0; }
+.learn p b { color: var(--ink); }
+#learn-videos a { color: var(--series-1); }

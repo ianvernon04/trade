@@ -108,6 +108,42 @@ def get_option_chain(ticker: str, expiry: Optional[str] = None) -> dict:
     return _cached(f"chain:{ticker}:{expiry}", 60, fetch)
 
 
+def get_earnings_info(ticker: str) -> dict:
+    """Next earnings date and days until it (cached 6h). Best-effort:
+    returns {"next_earnings": None, ...} when Yahoo has nothing listed."""
+    ticker = ticker.upper().strip()
+
+    def fetch():
+        from datetime import date, datetime
+        today = date.today()
+        candidates: list[date] = []
+        t = yf.Ticker(ticker)
+        try:
+            cal = t.calendar
+            raw = cal.get("Earnings Date", []) if isinstance(cal, dict) else []
+            for d in raw or []:
+                candidates.append(d.date() if isinstance(d, datetime) else d)
+        except Exception:
+            pass
+        if not candidates:
+            try:
+                edf = t.get_earnings_dates(limit=8)
+                if edf is not None:
+                    candidates = [ts.date() for ts in edf.index]
+            except Exception:
+                pass
+        future = sorted(d for d in candidates if d >= today)
+        if not future:
+            return {"next_earnings": None, "days_until": None}
+        nxt = future[0]
+        return {"next_earnings": nxt.isoformat(), "days_until": (nxt - today).days}
+
+    try:
+        return _cached(f"earnings:{ticker}", 6 * 3600, fetch)
+    except Exception:
+        return {"next_earnings": None, "days_until": None}
+
+
 def _round(x, n: int = 4):
     try:
         return round(float(x), n) if x is not None else None
