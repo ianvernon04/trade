@@ -132,3 +132,27 @@ ul.reasons li { margin: 3px 0; }
 .learn p { color: var(--ink-2); margin: 8px 0; }
 .learn p b { color: var(--ink); }
 #learn-videos a { color: var(--series-1); }
+
+/* ---------- mobile ---------- */
+.card { overflow-x: auto; }
+@media (max-width: 720px) {
+  header { padding: 8px 10px; gap: 8px; }
+  .brand { font-size: 14px; }
+  nav {
+    order: 3; width: 100%; display: flex; overflow-x: auto;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  }
+  nav::-webkit-scrollbar { display: none; }
+  nav button { padding: 8px 10px; font-size: 13px; flex: none; }
+  .ticker-box { margin-left: auto; }
+  #ticker-input { width: 70px; }
+  .banner { font-size: 10.5px; padding: 5px 10px; }
+  main { padding: 10px 10px 60px; }
+  .tiles { grid-template-columns: repeat(2, 1fr); }
+  .tile .v { font-size: 16px; }
+  .score-big { font-size: 26px; }
+  h2 { font-size: 15px; }
+  td, th { padding: 6px 5px; font-size: 12.5px; }
+  .news-item { flex-wrap: wrap; }
+  .controls-row label { font-size: 12px; }
+}

@@ -91,6 +91,15 @@ GET/POST/PATCH/DELETE /api/journal        trade CRUD
 GET  /api/journal/stats                   P&L analytics
 ```
 
+## Phone / no-download use (PWA)
+
+The app is a Progressive Web App: once it's hosted at a URL (see below),
+visitors need no download — and on a phone they can install it like a native
+app: **iPhone Safari** → Share → *Add to Home Screen*; **Android Chrome** →
+⋮ menu → *Add to Home screen / Install app*. It then launches full-screen
+from its own ⚡ icon. The service worker caches the app shell for instant
+loads; market data always comes from the network.
+
 ## Sharing it with others
 
 Three ways, from easiest to most public:
