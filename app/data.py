@@ -37,13 +37,23 @@ _cache_lock = threading.Lock()
 
 
 def _cached(key: str, ttl: float, fn):
-    """Return cached value for key if fresh, else compute, store and return."""
+    """Return cached value for key if fresh, else compute, store and return.
+
+    Stale-while-error: if the refresh fails (Yahoo rate limits burst-heavy
+    hosted traffic) and any previous value exists, serve the stale value
+    instead of surfacing an error — a slightly old quote beats a dead UI.
+    """
     now = time.time()
     with _cache_lock:
         hit = _cache.get(key)
         if hit and now - hit[0] < ttl:
             return hit[1]
-    value = fn()
+    try:
+        value = fn()
+    except Exception:
+        if hit is not None:
+            return hit[1]
+        raise
     with _cache_lock:
         _cache[key] = (time.time(), value)
     return value
@@ -76,18 +86,86 @@ def get_quote(ticker: str) -> dict:
             "as_of": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-    return _cached(f"quote:{ticker}", 20, fetch)
+    return _cached(f"quote:{ticker}", 45, fetch)
+
+
+def get_quotes_batch(tickers: list[str]) -> dict[str, dict]:
+    """Quotes for many tickers in ONE Yahoo request (cached 45s).
+
+    yf.download fetches daily bars for all symbols in a single call — the
+    current day's close updates with the live price during market hours.
+    Vastly fewer requests than per-ticker fast_info, which matters on
+    hosted IPs that Yahoo rate-limits aggressively.
+    """
+    syms = sorted({t.upper().strip() for t in tickers if t.strip()})
+    key = "batch:" + ",".join(syms)
+
+    def fetch():
+        df = yf.download(syms, period="5d", interval="1d", group_by="ticker",
+                         auto_adjust=True, progress=False, threads=False)
+        out: dict[str, dict] = {}
+        for s in syms:
+            try:
+                sub = df[s] if len(syms) > 1 else df
+                sub = sub.dropna(subset=["Close"])
+                if sub.empty:
+                    continue
+                last = sub.iloc[-1]
+                prev_close = float(sub["Close"].iloc[-2]) if len(sub) > 1 else None
+                price = float(last["Close"])
+                change = price - prev_close if prev_close else None
+                out[s] = {
+                    "ticker": s,
+                    "price": _round(price),
+                    "previous_close": _round(prev_close),
+                    "change": _round(change),
+                    "change_pct": _round(change / prev_close * 100) if (change is not None and prev_close) else None,
+                    "day_high": _round(last.get("High")),
+                    "day_low": _round(last.get("Low")),
+                    "open": _round(last.get("Open")),
+                    "volume": int(last["Volume"]) if last.get("Volume") == last.get("Volume") else None,
+                    "market_cap": None, "year_high": None, "year_low": None,
+                    "currency": "USD",
+                    "as_of": time.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+            except Exception:
+                continue
+        if not out:
+            raise ValueError("batch quote fetch returned no data")
+        return out
+
+    return _cached(key, 45, fetch)
+
+
+def _retry(fn, attempts: int = 3, base_delay: float = 1.5):
+    """Retry a Yahoo call with exponential backoff on transient/rate-limit errors."""
+    last = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            msg = str(e).lower()
+            transient = ("429" in msg or "rate" in msg or "timed out" in msg
+                         or "timeout" in msg or "connection" in msg or "curl" in msg)
+            if not transient or i == attempts - 1:
+                raise
+            time.sleep(base_delay * (2 ** i))
+    raise last  # unreachable, kept for clarity
 
 
 def get_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
-    """Historical OHLCV candles (cached 120s intraday, 300s daily)."""
+    """Historical OHLCV candles (cached 300s daily, 120s intraday)."""
     ticker = ticker.upper().strip()
     ttl = 120 if interval.endswith(("m", "h")) else 300
 
     def fetch():
-        df = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=True)
-        if df is None or df.empty:
-            raise ValueError(f"No historical data returned for {ticker}")
+        def once():
+            df = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=True)
+            if df is None or df.empty:
+                raise ValueError(f"No historical data returned for {ticker}")
+            return df
+        df = _retry(once)
         df = df.rename(columns=str.lower)[["open", "high", "low", "close", "volume"]]
         df.index.name = "date"
         return df
