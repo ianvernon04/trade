@@ -255,9 +255,16 @@ async function loadAgent(ticker) {
       <h3 style="margin-top:12px">Latest ${d.ticker} headlines</h3>
       ${(d.news || []).slice(0, 6).map(n => `<div class="news-item"><span class="dot dot-${n.sentiment === "positive" ? "pos" : n.sentiment === "negative" ? "neg" : "neu"}"></span>
         <a href="${n.link}" target="_blank" rel="noopener">${n.title}</a><span class="news-meta">${n.source}</span></div>`).join("") || '<p class="muted">No headlines found.</p>'}
+      ${(d.degraded || []).length ? `<p class="muted">Some sections were unavailable this run
+        (${d.degraded.join(", ")}) — usually Yahoo rate-limiting. Everything else above is current;
+        retry in a minute for the rest.</p>` : ""}
       <p class="muted">${d.plan.disclaimer}</p>`;
   } catch (e) {
-    box.innerHTML = `<p class="err">Agent brief failed: ${e.message}</p>`;
+    box.innerHTML = `<p class="err">Agent brief failed: ${e.message}</p>
+      <p class="muted">This is almost always Yahoo Finance throttling the server rather than a bug
+      in the app. Wait about a minute and click the ticker again — the Dashboard, Analyze and Learn
+      tabs keep working from cache meanwhile.</p>
+      <button onclick="loadAgent('${ticker}')">Retry now</button>`;
   }
 }
 

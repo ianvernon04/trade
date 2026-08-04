@@ -63,22 +63,31 @@ def quote(ticker: str):
 
 @app.get("/api/watchlist")
 def watchlist(tickers: Optional[str] = None):
-    syms = [s.strip().upper() for s in (tickers or ",".join(data.DEFAULT_WATCHLIST)).split(",") if s.strip()]
+    syms = [s.strip().upper() for s in (tickers or ",".join(data.DEFAULT_WATCHLIST)).split(",") if s.strip()][:20]
+    # One batched request for all quotes instead of one per ticker — far
+    # friendlier to Yahoo's rate limits on shared hosting IPs.
+    try:
+        batch = data.get_quotes_batch(syms)
+    except Exception:
+        batch = {}
     out = []
-    for s in syms[:20]:
-        try:
-            q = data.get_quote(s)
+    for s in syms:
+        q = batch.get(s)
+        if q is None:
             try:
-                hist = data.get_history(s, "6mo", "1d")
-                sig = score_frame(hist)
-                q["signal_score"] = sig["score"]
-                q["signal_label"] = sig["label"]
-            except Exception:
-                q["signal_score"] = None
-                q["signal_label"] = "N/A"
-            out.append(q)
-        except Exception as e:
-            out.append({"ticker": s, "error": str(e)})
+                q = data.get_quote(s)
+            except Exception as e:
+                out.append({"ticker": s, "error": str(e)})
+                continue
+        q = dict(q)
+        try:
+            sig = score_frame(data.get_history(s, "6mo", "1d"))
+            q["signal_score"] = sig["score"]
+            q["signal_label"] = sig["label"]
+        except Exception:
+            q["signal_score"] = None
+            q["signal_label"] = "N/A"
+        out.append(q)
     return {"quotes": out}
 
 
@@ -193,15 +202,34 @@ def ticker_news(ticker: str, limit: int = 15):
 
 @app.get("/api/agent/{ticker}")
 def agent(ticker: str):
-    """One-call trading brief: signal, options read, backtest stats, news."""
+    """One-call trading brief: signal, options read, backtest stats, news.
+
+    Every section degrades independently: if Yahoo rate-limits one call the
+    brief still renders with whatever succeeded, rather than failing whole.
+    """
     def run():
-        df = data.get_history(ticker, "1y", "1d")
+        df = data.get_history(ticker, "1y", "1d")  # required; everything else optional
         sig = score_frame(df)
+        try:
+            quote = data.get_quote(ticker)
+        except Exception:
+            close = sig["close"]
+            prev = float(df["close"].iloc[-2]) if len(df) > 1 else close
+            quote = {"ticker": ticker.upper(), "price": close, "previous_close": prev,
+                     "change": round(close - prev, 4),
+                     "change_pct": round((close / prev - 1) * 100, 4) if prev else None,
+                     "day_high": None, "day_low": None, "open": None, "volume": None,
+                     "market_cap": None, "year_high": None, "year_low": None,
+                     "currency": "USD", "as_of": "from daily bars (live quote unavailable)"}
+        try:
+            earnings = data.get_earnings_info(ticker)
+        except Exception:
+            earnings = {"next_earnings": None, "days_until": None}
         out = {
             "ticker": ticker.upper(),
-            "quote": data.get_quote(ticker),
+            "quote": quote,
             "signal": sig,
-            "earnings": data.get_earnings_info(ticker),
+            "earnings": earnings,
         }
         try:
             out["confluence"] = scorecard.confluence(sig, scorecard.weekly_signal(ticker))
@@ -229,8 +257,13 @@ def agent(ticker: str):
                 "total_return_pct", "buy_hold_return_pct", "max_drawdown_pct")}
         except Exception as e:
             out["backtest"] = {"error": str(e)}
-        out["news"] = news.get_ticker_news(ticker, 8)
+        try:
+            out["news"] = news.get_ticker_news(ticker, 8)
+        except Exception:
+            out["news"] = []
         out["plan"] = _plan(sig, out)
+        out["degraded"] = [k for k in ("options", "backtest", "scorecard", "confluence")
+                           if not out.get(k) or (isinstance(out.get(k), dict) and out[k].get("error"))]
         return out
     return _safe(run)
 
@@ -437,4 +470,14 @@ def _safe(fn):
     except ValueError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
-        raise HTTPException(502, f"Upstream data error: {e}")
+        msg = str(e)
+        low = msg.lower()
+        if "429" in msg or "rate" in low and "limit" in low or "too many requests" in low:
+            raise HTTPException(
+                503, "Yahoo Finance is rate-limiting this server right now (shared hosting IPs "
+                     "get throttled). Wait ~60 seconds and try again — cached data still works.")
+        if "curl" in low or "connect" in low or "timed out" in low or "timeout" in low:
+            raise HTTPException(
+                503, f"Couldn't reach Yahoo Finance: {msg}. Check the server's internet access, "
+                     "then retry.")
+        raise HTTPException(502, f"Upstream data error: {msg}")
