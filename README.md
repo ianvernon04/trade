@@ -55,6 +55,41 @@ tells you to be flat before the report unless the earnings bet is the thesis.
 Quotes/signals refresh every 30 s while a tab is open; option chains are cached
 60 s server-side, news 3 min.
 
+## Claude + Robinhood agent mode
+
+The repo doubles as a Claude Code agent workspace wired to Robinhood:
+
+- **`.mcp.json`** registers the `robinhood-trading` MCP server
+  (`https://agent.robinhood.com/mcp/trading`). Open the repo in Claude Code,
+  approve the server when prompted, and authenticate with `/mcp` — Claude can
+  then use Robinhood's account/market/order tools alongside this app's
+  signals. (Same effect as
+  `claude mcp add robinhood-trading --transport http https://agent.robinhood.com/mcp/trading`,
+  but project-scoped so it travels with the repo.)
+- **`CLAUDE.md`** tells every Claude session how to behave: analyze with the
+  app's indicators before recommending, log every broker action, never place
+  an order without your explicit confirmation.
+- **Agent tracking** (`app/tracking.py`) records what the agent does in two
+  tables inside `journal.db`: `agent_events` (orders, fills, positions, data
+  pulls — raw payloads preserved) and `agent_decisions` (every
+  recommendation with its full signal snapshot). `python -m app evaluate`
+  later grades each directional call against the realized forward move, so
+  `python -m app report` shows the agent's actual hit rate — the same
+  self-accountability the scorecard applies to the signal.
+
+The console works standalone too:
+
+```bash
+python -m app analyze NVDA --options   # signal brief, records the decision
+python -m app report                   # activity + graded track record
+python -m app export --out backup.json # journal.db is gitignored; back it up
+```
+
+Everything is also exposed under `/api/tracking/*` when the server runs.
+Trading through the agent is still your decision at every step: it is built
+to require explicit confirmation per order, and its analytics remain
+educational, not financial advice.
+
 ## How the signal works
 
 Seven weighted components vote between -1 and +1; the total is normalized to a
