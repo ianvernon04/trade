@@ -7,9 +7,22 @@ reason so the UI can explain *why* the signal reads the way it does.
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from .indicators import compute_all
+
+
+def _num(x, n: int = 4):
+    """JSON-safe float: NaN/inf/None all become None."""
+    try:
+        if x is None:
+            return None
+        v = float(x)
+        return round(v, n) if math.isfinite(v) else None
+    except (TypeError, ValueError):
+        return None
 
 # (weight, name) — weights sum to 100 for a clean normalized score.
 WEIGHTS = {
@@ -26,6 +39,10 @@ WEIGHTS = {
 def score_frame(df: pd.DataFrame) -> dict:
     """Score the most recent bar of an indicator-annotated OHLCV frame."""
     ind = compute_all(df)
+    # Never score a bar with no close (partial/holiday rows from the feed).
+    ind = ind[ind["close"].notna()]
+    if ind.empty:
+        raise ValueError("No priced bars available to score")
     row = ind.iloc[-1]
     prev = ind.iloc[-2] if len(ind) > 1 else row
     votes: list[dict] = []
@@ -117,9 +134,9 @@ def score_frame(df: pd.DataFrame) -> dict:
         "score": score,
         "label": label_for(score),
         "votes": votes,
-        "close": round(float(close), 4),
-        "atr": round(float(row["atr14"]), 4) if pd.notna(row["atr14"]) else None,
-        "rsi": round(float(r), 1) if pd.notna(r) else None,
+        "close": _num(close),
+        "atr": _num(row["atr14"]),
+        "rsi": _num(r, 1),
     }
 
 

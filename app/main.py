@@ -7,14 +7,16 @@ Then open  http://127.0.0.1:8000
 from __future__ import annotations
 
 import base64
+import math
 import os
 import secrets
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -22,7 +24,21 @@ from . import (alerts, backtest, calendar_events, data, journal, news, options,
                positions, scanner, scorecard)
 from .signals import score_frame, score_series
 
-app = FastAPI(title="Options Trading Assistant")
+
+class SafeJSONResponse(JSONResponse):
+    """JSON response that tolerates NaN/inf anywhere in the payload.
+
+    Market data legitimately contains gaps (partial trailing bars, holidays,
+    indicators before their warm-up period). JSON cannot represent NaN, so
+    without this a single missing value aborts an entire response. Every
+    endpoint inherits this via the app's default_response_class.
+    """
+
+    def render(self, content) -> bytes:
+        return super().render(_json_safe(content))
+
+
+app = FastAPI(title="Options Trading Assistant", default_response_class=SafeJSONResponse)
 journal.init()
 alerts.start_background_thread()
 
@@ -460,6 +476,25 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 def _ser(s: pd.Series) -> list:
     return [None if pd.isna(x) else round(float(x), 4) for x in s]
+
+
+def _json_safe(obj):
+    """Recursively replace NaN/inf with None.
+
+    JSON has no NaN, so a single missing price bar anywhere in a payload
+    would otherwise abort the whole response mid-serialization. This is the
+    last line of defence behind the per-module guards.
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, (np.floating, np.integer)):
+        v = obj.item()
+        return v if not isinstance(v, float) or math.isfinite(v) else None
+    return obj
 
 
 def _safe(fn):

@@ -12,6 +12,7 @@ import time
 from typing import Any, Optional
 
 import logging
+import math
 
 import pandas as pd
 import yfinance as yf
@@ -167,6 +168,13 @@ def get_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.Dat
             return df
         df = _retry(once)
         df = df.rename(columns=str.lower)[["open", "high", "low", "close", "volume"]]
+        # Yahoo can return a partial trailing bar (or holiday/halt rows) whose
+        # OHLC are NaN. Those poison every downstream calculation and cannot be
+        # JSON-encoded, so drop them before anything else sees the frame.
+        df = df.dropna(subset=["open", "high", "low", "close"])
+        if df.empty:
+            raise ValueError(f"No usable price bars for {ticker} (all rows incomplete)")
+        df["volume"] = df["volume"].fillna(0)
         df.index.name = "date"
         return df
 
@@ -237,7 +245,11 @@ def get_earnings_info(ticker: str) -> dict:
 
 
 def _round(x, n: int = 4):
+    """Round to n places, mapping None/NaN/inf to None (NaN isn't JSON-encodable)."""
     try:
-        return round(float(x), n) if x is not None else None
+        if x is None:
+            return None
+        v = float(x)
+        return round(v, n) if math.isfinite(v) else None
     except (TypeError, ValueError):
         return None
