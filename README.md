@@ -142,6 +142,30 @@ their own copy — each person then gets their own private journal.
   a hobby app served over whatever transport you give it — don't reuse a
   password you care about, and prefer hosts that provide HTTPS (Render does).
 
+## Health checks
+
+`healthcheck.py` exercises every data path against live data and reports
+problems — run it any time something looks off:
+
+```bash
+python3 healthcheck.py                                          # local app + live data
+python3 healthcheck.py --url https://your-app.onrender.com      # also check the deployed site
+python3 healthcheck.py --quiet                                  # only print problems
+```
+
+It verifies Yahoo connectivity, price history (including that no NaN bars slip
+through), the signal engine, option chains and greeks, earnings lookups (and
+that ETFs are correctly skipped), the backtester, scorecard, scanner, news
+feeds, the macro calendar, and every API endpoint — asserting each response is
+strict-JSON clean. Exit code 1 on failure, so CI can gate on it. If the machine
+has no internet, data checks are reported as SKIPPED rather than failed.
+
+A GitHub Actions workflow (`.github/workflows/healthcheck.yml`) runs it every
+weekday at 11:55 UTC (7:55am ET, before the open) and opens an issue labeled
+`healthcheck` if anything fails. To have it also check your deployed site, add
+a repository variable named `APP_URL` (Settings → Secrets and variables →
+Actions → Variables) set to your app's URL.
+
 ## Data sources
 
 - **Market data & option chains:** Yahoo Finance (via `yfinance`) — quotes,
