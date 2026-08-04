@@ -11,7 +11,7 @@ import math
 import os
 import secrets
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (alerts, backtest, calendar_events, data, journal, news, options,
-               positions, scanner, scorecard)
+               positions, scanner, scorecard, tracking)
 from .signals import score_frame, score_series
 
 
@@ -40,6 +40,7 @@ class SafeJSONResponse(JSONResponse):
 
 app = FastAPI(title="Options Trading Assistant", default_response_class=SafeJSONResponse)
 journal.init()
+tracking.init()
 alerts.start_background_thread()
 
 # Optional shared password for hosted/shared deployments. When APP_PASSWORD is
@@ -455,6 +456,92 @@ def journal_insights(user: dict = Depends(current_user)):
 @app.get("/api/positions")
 def live_positions(user: dict = Depends(current_user)):
     return positions.live_positions(user["id"])
+
+
+# ---------- Agent tracking (Claude + Robinhood MCP activity) ----------
+# Not scoped per journal user: this is the machine's own activity log, shared
+# by the CLI (python -m app ...) and any agent driving the API. The optional
+# site-wide APP_PASSWORD gate still applies.
+
+class EventIn(BaseModel):
+    kind: str
+    ticker: Optional[str] = None
+    source: str = "api"
+    note: Optional[str] = None
+    payload: Any = None
+
+
+class DecisionIn(BaseModel):
+    ticker: str
+    action: str
+    horizon_days: int = 10
+    price: Optional[float] = None
+    score: Optional[float] = None
+    label: Optional[str] = None
+    rationale: Optional[str] = None
+    signal: Any = None
+    source: str = "api"
+    order_id: Optional[str] = None
+
+
+class IngestIn(BaseModel):
+    payload: Any
+    source: str = "robinhood-mcp"
+    kind: Optional[str] = None
+
+
+@app.get("/api/tracking/summary")
+def tracking_summary(days: Optional[int] = Query(None, ge=1, le=3650)):
+    return tracking.summary(days=days)
+
+
+@app.get("/api/tracking/events")
+def tracking_events(ticker: Optional[str] = None, kind: Optional[str] = None,
+                    limit: int = Query(100, ge=1, le=2000)):
+    return {"events": tracking.list_events(ticker=ticker, kind=kind, limit=limit)}
+
+
+@app.get("/api/tracking/decisions")
+def tracking_decisions(ticker: Optional[str] = None, action: Optional[str] = None,
+                       pending: bool = False, limit: int = Query(100, ge=1, le=2000)):
+    return {"decisions": tracking.list_decisions(ticker=ticker, action=action,
+                                                 pending_only=pending, limit=limit)}
+
+
+@app.post("/api/tracking/event")
+def tracking_add_event(e: EventIn):
+    return tracking.log_event(e.kind, ticker=e.ticker, source=e.source,
+                              note=e.note, payload=e.payload)
+
+
+@app.post("/api/tracking/decision")
+def tracking_add_decision(d: DecisionIn):
+    try:
+        return tracking.log_decision(
+            d.ticker, d.action, horizon_days=d.horizon_days, price=d.price,
+            score=d.score, label=d.label, rationale=d.rationale, signal=d.signal,
+            source=d.source, order_id=d.order_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/tracking/ingest")
+def tracking_ingest(i: IngestIn):
+    return tracking.ingest(i.payload, source=i.source, kind_hint=i.kind)
+
+
+@app.post("/api/tracking/evaluate")
+def tracking_evaluate(period: str = "1y"):
+    def bars_for(ticker: str):
+        df = data.get_history(ticker, period, "1d")
+        df = df[df["close"].notna()]
+        return [(str(i)[:10], float(c)) for i, c in zip(df.index, df["close"])]
+    return _safe(lambda: tracking.evaluate_decisions(bars_for))
+
+
+@app.get("/api/tracking/export")
+def tracking_export():
+    return tracking.export_all()
 
 
 # ---------- Static frontend ----------
