@@ -473,9 +473,17 @@ function renderTown(t) {
 
   // The three junior agents. Stale windows are ~2× each agent's own cadence
   // (30 / 60 / 240 min), so one missed cycle doesn't put a house to sleep.
+  // Blind is not calm. An agent with no broker snapshot reads the account
+  // as unknown, and its house has to say so instead of showing a reassuring
+  // "no positions" that looks identical to a genuinely flat book.
   const pm = residentState(t.position_manager, 1.5, (p) => {
+    if (p.blind) return { mood: "bearish", line: "can't see account" };
+    if (p.stale) return { mood: "bearish", line: `stale · ${Math.round(p.age_hours)}h old` };
     const n = p.n_positions || 0;
     if (!n) return { mood: "neutral", line: "no open positions" };
+    if (p.unpriced) {
+      return { mood: "bearish", line: `${n} held · ${p.unpriced} unpriced` };
+    }
     const urgent = (p.earnings_warns || []).length
       || (p.actions || []).some((a) => a.type === "reversal");
     return {
@@ -483,13 +491,20 @@ function renderTown(t) {
       line: `${n} position${n === 1 ? "" : "s"} · ${(p.actions || []).length} to review`,
     };
   });
-  const rm = residentState(t.risk_manager, 3, (p) => ({
-    mood: p.risk_level === "high" ? "bearish"
-      : p.risk_level === "medium" ? "neutral" : "bullish",
-    line: p.n_positions
-      ? `Δ${p.net_delta >= 0 ? "+" : ""}${Math.round(p.net_delta)} · ${p.risk_level} risk`
-      : "portfolio flat",
-  }));
+  const rm = residentState(t.risk_manager, 3, (p) => {
+    if (p.blind) return { mood: "bearish", line: "can't see account" };
+    if (p.stale) return { mood: "bearish", line: `stale · ${Math.round(p.age_hours)}h old` };
+    // "unknown" means part of the book couldn't be priced — a warning, not
+    // the calm green that anything-but-high/medium would otherwise give it.
+    const mood = p.risk_level === "high" || p.risk_level === "unknown" ? "bearish"
+      : p.risk_level === "medium" ? "neutral" : "bullish";
+    return {
+      mood,
+      line: p.n_positions
+        ? `Δ${p.net_delta >= 0 ? "+" : ""}${Math.round(p.net_delta)} · ${p.risk_level} risk`
+        : "portfolio flat",
+    };
+  });
   const pe = residentState(t.pattern_engine, 12, (p) => {
     if (p.status !== "ok") {
       return { mood: "neutral", line: `${p.n_decisions || 0}/${p.min_required || 20} calls` };
