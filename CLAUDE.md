@@ -150,21 +150,29 @@ declined to specify them when asked — not a guess at generic best practice.
 They're deliberately conservative *because* nobody's watching. Change them
 by editing this section directly.
 
-**What you're on your own to verify before trusting this with real money —**
-none of this could be tested from the sandbox that built it:
-- **This needs a scheduler on your own machine.** Nothing in this repo
-  creates one. On macOS, `crontab -e` and a line like
-  `0 9 * * 1-5 cd ~/Desktop/trade && claude -p "Run the autonomous mode routine in CLAUDE.md" >> autolog.txt 2>&1`
-  runs it weekdays at 9am — adjust the path and time, and confirm
-  `claude --help` still shows `-p`/`--print` on your installed version.
-- **Robinhood re-authentication in a headless run is unverified.** `/mcp`
-  login opens a real browser; whether that session's credentials survive a
-  scheduled, unattended invocation days later is untested. Watch the first
-  few scheduled runs in real time (check `autolog.txt` and `python -m app
-  report` right after) before trusting one to run unwatched overnight.
+**Scheduling it.** `./install-autotrade.sh` installs a weekday cron entry
+that runs `autotrade.sh` (which invokes `claude -p` with the routine above);
+`--show` and `--remove` manage it. It defaults to **dry mode** — every gate
+runs and everything is logged, but no order tool is ever called — so the
+first runs prove the plumbing works before real money is involved.
+`./install-autotrade.sh live` switches it on for real. Output lands in
+`autotrade.log` (all gitignored).
+
+**What could not be verified from the sandbox that built this, and is
+therefore on you to confirm before trusting it with real money:**
+- **Robinhood auth surviving a headless run is untested.** `/mcp` login
+  opens a real browser; whether those credentials still work in a
+  scheduled, unattended run days later is unknown. This is exactly what dry
+  mode is for — if auth is dead, the log will show it and nothing traded.
+- **A hang means a permission prompt.** `claude -p` will wait forever on an
+  interactive tool-approval prompt no one is there to answer. If a run
+  produces no output past "starting run", see the `CLAUDE_FLAGS` comment in
+  `autotrade.sh`.
 - **Robinhood's terms of service for automated order submission through
   their conversational interface haven't been checked.** Confirm this is
   permitted before relying on it.
+- **cron only fires while the Mac is awake**, and macOS may ask to grant
+  cron file access the first time.
 
 ## CLI reference
 
