@@ -168,6 +168,7 @@ function activeTab() {
 
 function loadTab(name) {
   if (name === "dashboard") loadWatchlist();
+  if (name === "agent") loadAgentBody();
   if (name === "scanner") loadScanner();
   if (name === "analyze") loadAnalysis();
   if (name === "options") loadOptions();
@@ -266,6 +267,124 @@ async function loadAgent(ticker) {
       tabs keep working from cache meanwhile.</p>
       <button onclick="loadAgent('${ticker}')">Retry now</button>`;
   }
+}
+
+/* ---------------- agent body (the visible agent) ---------------- */
+/* Mood + face are derived from the tracking store: latest directional call
+   sets the stance, recency sets awake/asleep, and the report card is the
+   graded hit rate. Everything renders from /api/tracking/*. */
+
+const MOUTHS = {
+  bullish: "M78 112 q22 16 44 0",
+  bearish: "M78 122 q22 -14 44 0",
+  neutral: "M82 117 h36",
+  asleep: "M92 116 q8 5 16 0",
+};
+const DIRECTIONAL_UP = ["buy", "call"], DIRECTIONAL_DOWN = ["sell", "put"];
+const ACTION_PILL = { buy: "BUY", call: "CALL", sell: "SELL", put: "PUT",
+  hold: "NEUTRAL", no_trade: "NO-TRADE" };
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function fmtAgo(ts) {
+  if (!ts) return "never";
+  const s = (Date.now() - new Date(ts).getTime()) / 1000;
+  if (!isFinite(s)) return ts;
+  if (s < 90) return "just now";
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  if (s < 172800) return Math.round(s / 3600) + " h ago";
+  return Math.round(s / 86400) + " days ago";
+}
+
+async function loadAgentBody() {
+  try {
+    const [s, ev, dec] = await Promise.all([
+      api("/api/tracking/summary?days=30"),
+      api("/api/tracking/events?limit=25"),
+      api("/api/tracking/decisions?limit=30"),
+    ]);
+    renderAgentBody(s, ev.events, dec.decisions);
+    $("#ag-updated").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    $("#ag-headline").textContent = "I can't reach my memory.";
+    $("#ag-sub").textContent = e.message + " — is the server running next to journal.db?";
+  }
+}
+
+function renderAgentBody(s, events, decisions) {
+  const tr = s.track_record || {};
+  const lastTs = (s.events && s.events.last_ts) || (decisions[0] && decisions[0].ts) || null;
+  const hoursSince = lastTs ? (Date.now() - new Date(lastTs).getTime()) / 3600000 : Infinity;
+  const lastDir = decisions.find(d =>
+    DIRECTIONAL_UP.includes(d.action) || DIRECTIONAL_DOWN.includes(d.action));
+  const dirFresh = lastDir && (Date.now() - new Date(lastDir.ts).getTime()) < 3 * 86400000;
+
+  let mood = "neutral";
+  if (hoursSince > 24) mood = "asleep";
+  else if (dirFresh) mood = DIRECTIONAL_UP.includes(lastDir.action) ? "bullish" : "bearish";
+
+  $("#agent-svg").setAttribute("class", "mood-" + mood);
+  $("#agent-mouth").setAttribute("d", MOUTHS[mood]);
+
+  // Speech bubble
+  const hl = $("#ag-headline"), sub = $("#ag-sub");
+  if (!lastTs) {
+    hl.textContent = "Nobody has woken me up yet.";
+    sub.innerHTML = "Open this repo in Claude Code (<code>claude</code> in the folder), connect " +
+      "Robinhood with <code>/mcp</code>, and talk to me — my first analysis will appear here.";
+  } else if (mood === "asleep") {
+    hl.textContent = "Asleep — last active " + fmtAgo(lastTs) + ".";
+    sub.textContent = "Start a Claude Code session in the repo folder to put me back to work.";
+  } else if (mood === "bullish" || mood === "bearish") {
+    hl.textContent = `Leaning ${mood} — my latest call is ${lastDir.action.toUpperCase()} ${lastDir.ticker}.`;
+    sub.textContent = `Made ${fmtAgo(lastDir.ts)}` +
+      (lastDir.score !== null && lastDir.score !== undefined ? ` at signal score ${lastDir.score > 0 ? "+" : ""}${lastDir.score}` : "") +
+      (lastDir.rationale ? ` — ${lastDir.rationale}` : "") + ".";
+  } else {
+    hl.textContent = "Awake and watching — no strong stance right now.";
+    sub.textContent = "Last activity " + fmtAgo(lastTs) +
+      ". Neutral tape is a position too: the best trade is often no trade.";
+  }
+  const pills = [];
+  if (lastDir) pills.push(`<span class="pill ${ACTION_PILL[lastDir.action]}">${esc(lastDir.action)} ${esc(lastDir.ticker)}</span>`);
+  if (tr.graded) pills.push(`<span class="pill ${tr.hit_rate >= 55 ? "BUY" : tr.hit_rate <= 45 ? "SELL" : "NEUTRAL"}">hit rate ${tr.hit_rate}%</span>`);
+  if (s.decisions && s.decisions.pending) pills.push(`<span class="chip">${s.decisions.pending} call(s) awaiting grade</span>`);
+  $("#ag-pills").innerHTML = pills.join(" ");
+
+  // Vitals
+  $("#ag-tiles").innerHTML = [
+    ["Actions (30d)", s.events ? s.events.total : 0],
+    ["Decisions", s.decisions ? s.decisions.total : 0],
+    ["Awaiting grade", s.decisions ? s.decisions.pending : 0],
+    ["Hit rate", tr.hit_rate !== null && tr.hit_rate !== undefined ? tr.hit_rate + "%" : "–"],
+    ["Avg fwd return", tr.avg_fwd_return_pct !== null && tr.avg_fwd_return_pct !== undefined
+      ? (tr.avg_fwd_return_pct >= 0 ? "+" : "") + tr.avg_fwd_return_pct + "%" : "–"],
+    ["Best call", tr.best ? `${tr.best.ticker} ${tr.best.fwd_return_pct >= 0 ? "+" : ""}${tr.best.fwd_return_pct}%` : "–"],
+  ].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+
+  // Diary feed
+  $("#ag-feed").innerHTML = events.length ? events.map(e =>
+    `<div class="news-item"><span class="chip">${esc(e.kind)}</span>
+     ${e.ticker ? `<b>${esc(e.ticker)}</b>` : ""}
+     <span class="feed-note">${esc(e.note || "")}</span>
+     <span class="news-meta">${esc(e.source)} · ${fmtAgo(e.ts)}</span></div>`).join("")
+    : `<p class="muted">Nothing yet. Every Robinhood order, fill, and data pull the agent makes lands here the moment it happens.</p>`;
+
+  // Report card table
+  $("#ag-decisions tbody").innerHTML = decisions.length ? decisions.map(d => {
+    const outcome = d.evaluated_at === null || d.evaluated_at === undefined
+      ? '<span class="pill NEUTRAL">pending</span>'
+      : d.hit === null
+        ? `<span class="muted">${d.fwd_return_pct >= 0 ? "+" : ""}${d.fwd_return_pct}% (flat call)</span>`
+        : `<span class="${d.hit ? "up" : "down"}">${d.fwd_return_pct >= 0 ? "+" : ""}${d.fwd_return_pct}% ${d.hit ? "✔ hit" : "✖ miss"}</span>`;
+    return `<tr><td class="muted">${esc((d.ts || "").slice(0, 16).replace("T", " "))}</td>
+      <td><b>${esc(d.ticker)}</b></td>
+      <td><span class="pill ${ACTION_PILL[d.action] || "NEUTRAL"}">${esc(d.action)}</span></td>
+      <td>${d.price !== null && d.price !== undefined ? fmt$(d.price) : "–"}</td>
+      <td>${d.score !== null && d.score !== undefined ? (d.score >= 0 ? "+" : "") + d.score : "–"}</td>
+      <td>${outcome}</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="muted">No calls recorded yet — ask the agent to analyze a ticker.</td></tr>`;
 }
 
 /* ---------------- scanner + calendar + alerts ---------------- */
@@ -727,6 +846,7 @@ $("#j-logout").addEventListener("click", async () => {
 setInterval(() => {
   const tab = activeTab();
   if (tab === "dashboard") loadWatchlist();
+  else if (tab === "agent") loadAgentBody();
   else if (tab === "analyze") loadAnalysis();
   else if (tab === "options") loadOptions($("#op-expiry").value || undefined);
 }, 30000);
