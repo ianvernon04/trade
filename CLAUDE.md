@@ -61,8 +61,11 @@ don't loosen them because a trade "seems obviously fine," and don't add
 unrequested friction either.
 
 - **Every order needs its own explicit "yes" in this conversation before you
-  call any Robinhood order-placing tool — no exceptions.** A standing "trade
-  for me" from earlier does not count as approval for a new, specific order.
+  call any Robinhood order-placing tool.** A standing "trade for me" from
+  earlier does not count as approval for a new, specific order. The *only*
+  exception is an unattended autonomous run, which is governed by the
+  separate, narrower protocol below — if a human is present in the
+  conversation, this rule applies with no exceptions.
   Ceremony scales with size:
   - **Under $300 total premium/cost:** state the trade in one line (ticker,
     contract, side, qty, approx cost) and get a plain yes.
@@ -93,6 +96,60 @@ unrequested friction either.
   the stakes warrant it. Options can lose 100% of premium — naked positions
   can lose more.
 
+## Autonomous (unattended) trading
+
+An unattended run is any session with no human reading along in real time —
+a scheduled Routine, a cron-fired session, a background job. The rules above
+assume a human is present to hear a stated risk and answer; here nobody is,
+so the check moves into code (`app/autonomy.py`) and this protocol is
+mandatory.
+
+**Before every unattended order, without exception:**
+
+```
+python -m app autonomy check --payload '{"ticker":"NVDA","strategy":"long_call",
+  "side":"buy","quantity":2,"strike":185,"expiry":"2026-09-18",
+  "limit_price":1.20,"est_cost":240,"max_loss":240}'
+```
+
+Exit code 0 = allowed, 1 = denied. **If it denies, do not place the order and
+do not work around it** — log the denial (`python -m app log note`) and move
+on. Never edit the policy mid-run to make a denied order pass; the policy is
+the account owner's standing instruction, not a suggestion to negotiate with.
+
+**The moment the broker tool returns**, record it so it counts toward the
+daily cap and lands in the audit trail:
+
+```python
+from app import autonomy
+autonomy.record_autonomous_order(order, payload=<tool result JSON>)
+```
+
+The gate enforces (all configurable, `python -m app autonomy status`):
+
+- **Kill switch** — off by default; nothing autonomous trades until the owner
+  runs `python -m app autonomy enable`.
+- **Per-trade cap** ($300 default) measured on max loss, not cost, so a
+  credit spread is judged by what it can actually lose.
+- **Daily trade cap** (2 default) counting only `source='autonomous'` orders,
+  so human-approved trades never consume the unattended budget.
+- **Defined-risk only** (on by default) — unattended runs may not open naked
+  or unrecognized-strategy positions. An unknown strategy is treated as
+  undefined risk, never as safe.
+- **Known worst case required** — no order whose max loss can't be stated as
+  a number.
+
+Also true of unattended runs: the tracking discipline below applies in full,
+and the earnings/IV/macro warnings must still be evaluated — with nobody to
+read them, a warning that would make a human hesitate is a reason to skip the
+trade, not to note it and proceed.
+
+**Honest limitation:** this gate cannot physically intercept an MCP call —
+the broker tools are directly reachable. It is a mandatory protocol step with
+a deterministic, tested implementation and an audit trail, not a sandbox. The
+kill switch (`python -m app autonomy disable`) and Robinhood's own account
+controls are the hard stops.
+
 ## CLI reference
 
 ```
@@ -105,6 +162,10 @@ python -m app evaluate [--period 1y]        # grade matured decisions
 python -m app report [--days 30]            # activity + track record
 python -m app events / decisions [--pending] [--json]
 python -m app export --out backup.json      # journal.db is gitignored — this is the backup
+python -m app autonomy status               # unattended-trading policy + today's usage
+python -m app autonomy enable | disable     # the kill switch
+python -m app autonomy set --key per_trade_max_usd --value 300
+python -m app autonomy check --payload '{...}'   # exit 0 = allowed, 1 = denied
 ```
 
 Actions: `buy sell call put hold no_trade`. Decisions are graded on the
