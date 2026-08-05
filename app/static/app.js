@@ -140,8 +140,21 @@ function authHeaders() {
   return t ? { "X-Auth-Token": t } : {};
 }
 
-async function api(path) {
-  const r = await fetch(path, { headers: authHeaders() });
+async function api(path, timeoutMs = 45000) {
+  // Explicit timeout: without it a slow upstream (Yahoo throttling) leaves
+  // Safari hanging until it gives up with an unhelpful bare "Load failed".
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let r;
+  try {
+    r = await fetch(path, { headers: authHeaders(), signal: ctrl.signal });
+  } catch (e) {
+    throw new Error(e.name === "AbortError"
+      ? "server is responding slowly (market data source may be rate-limiting) — retrying on the next auto-refresh"
+      : "can't reach the app server — is it running? (start it with ./run.sh in the trade folder)");
+  } finally {
+    clearTimeout(timer);
+  }
   if (!r.ok) {
     let msg = r.statusText;
     try { msg = (await r.json()).detail || msg; } catch {}

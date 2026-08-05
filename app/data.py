@@ -89,8 +89,11 @@ def get_quote(ticker: str) -> dict:
             }
         # fast_info sporadically throws internal KeyErrors (e.g.
         # 'exchangeTimezoneName') on the first call for a symbol; a quick
-        # retry clears it almost every time.
-        return _retry(once, always=True)
+        # retry clears it almost every time. Two fast attempts only: this
+        # runs per-ticker in the watchlist fallback loop, so long backoff
+        # here multiplies by 12 and hangs the whole endpoint when Yahoo
+        # is throttling.
+        return _retry(once, attempts=2, base_delay=0.5, always=True)
 
     return _cached(f"quote:{ticker}", 45, fetch)
 
@@ -109,8 +112,9 @@ def get_quotes_batch(tickers: list[str]) -> dict[str, dict]:
     def fetch():
         def once():
             return yf.download(syms, period="5d", interval="1d", group_by="ticker",
-                               auto_adjust=True, progress=False, threads=False)
-        df = _retry(once, attempts=2, always=True)
+                               auto_adjust=True, progress=False, threads=False,
+                               timeout=8)
+        df = _retry(once, attempts=2, base_delay=0.75, always=True)
         out: dict[str, dict] = {}
         for s in syms:
             try:
@@ -178,11 +182,16 @@ def get_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.Dat
 
     def fetch():
         def once():
-            df = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=True)
+            # NB: no timeout kwarg — yfinance 1.x removed it from history().
+            df = yf.Ticker(ticker).history(period=period, interval=interval,
+                                           auto_adjust=True)
             if df is None or df.empty:
                 raise ValueError(f"No historical data returned for {ticker}")
             return df
-        df = _retry(once)
+        # Shorter backoff than the default: this runs per-ticker inside the
+        # watchlist's signal loop, where 12 tickers x long waits under a 429
+        # storm adds minutes and browsers abort with a bare "Load failed".
+        df = _retry(once, base_delay=1.0)
         df = df.rename(columns=str.lower)[["open", "high", "low", "close", "volume"]]
         # Yahoo can return a partial trailing bar (or holiday/halt rows) whose
         # OHLC are NaN. Those poison every downstream calculation and cannot be
