@@ -31,6 +31,20 @@ pip install -r requirements.txt
 uvicorn app.main:app --port 8000
 ```
 
+**Run it in the background (macOS)** — no terminal window to keep open:
+
+```bash
+./install-server.sh            # starts now, auto-starts at login, restarts on crash
+./install-server.sh --status   # is it running?
+./install-server.sh --logs     # watch the server log
+./install-server.sh --remove   # stop and uninstall
+```
+
+The dashboard is then always at http://127.0.0.1:8000 while the Mac is awake
+and you're logged in. (For a URL that works even when this computer is off —
+including from your phone — use the Render deployment below; note its free
+tier wipes `journal.db` on redeploys.)
+
 Requires Python 3.10+ and internet access (data comes from Yahoo Finance and
 public RSS feeds — no API keys needed).
 
@@ -39,6 +53,7 @@ public RSS feeds — no API keys needed).
 | Tab | What it does |
 |---|---|
 | **Dashboard** | Live watchlist (big tech + SPY/QQQ) with price, change, and a composite signal per ticker; click a row for a full **agent brief** combining signal + options read + backtest stats + scorecard + weekly-timeframe confluence + headlines + a concrete trading plan. |
+| **Neighborhood** | A drawn street where your agents live. The Trader's house at №1 shows live state: windows light up when it's awake, the porch light follows its stance (green/red/blue), smoke rises when it's active, the mailbox flag goes up with today's event count, and the lawn plaque keeps its career hit rate. The sky follows your local clock — day scene with sun, night scene with moon, stars, and lit streetlamps (preview either with `?hour=12` / `?hour=22`). Click the house to step inside (the Agent tab). Two lots stay reserved for your future agents. |
 | **Agent** | The Claude agent's visible body: an avatar whose mood follows its latest stance (bullish / bearish / watching / asleep), a speech bubble with its current thinking, a live diary of every analysis, order, and fill it performs through the Robinhood MCP server, and its graded report card — hit rate, average forward return, best call — from the tracking store. |
 | **Scanner** | Morning sweep of the watchlist ranked by signal strength, fresh threshold crossings, and daily/weekly agreement (earnings drag rank down). Includes a macro calendar (FOMC/CPI) and a live **alert feed**: a background engine re-checks the watchlist and your open positions every 5 minutes and raises alerts for signal crossings, positions near expiry/earnings, and expired contracts — with optional browser/phone notifications. |
 | **Analyze** | Price chart with SMA20/50 + Bollinger bands, RSI, and the composite score history; a table explaining every indicator's vote and weight; and the **agent scorecard** — every historical crossing of the live signal on this ticker over 3 years, graded on forward returns, so you know the signal's actual win rate before trusting it. |

@@ -9,5 +9,4 @@ cron-stderr.log
 .autotrade.lock/
 launchd-stdout.log
 launchd-stderr.log
-server-stdout.log
-server-stderr.log
+server.log

@@ -195,6 +195,34 @@ ul.reasons li { margin: 3px 0; }
   #agent-svg, .a-eye, .a-dot, .mood-asleep .a-zzz { animation: none !important; }
 }
 
+/* ---------- neighborhood ---------- */
+.town-card { padding: 8px; }
+.town-label { font: 700 13px system-ui, sans-serif; fill: #e8e4d8; letter-spacing: 0.04em; }
+.town-sub { font: 11px system-ui, sans-serif; fill: #b9b4a6; }
+.house-trader:focus-visible { outline: 2px solid var(--series-1); }
+.smoke { fill: #b9b4a6; opacity: 0; animation: town-smoke 3.6s ease-out infinite; }
+.smoke.s2 { animation-delay: 1.2s; }
+.smoke.s3 { animation-delay: 2.4s; }
+.porch { animation: ag-pulse 2.6s ease-in-out infinite; }
+.win-lit { animation: town-flicker 7s ease-in-out infinite; }
+.town-zzz { font: 700 17px system-ui, sans-serif; fill: #b9b4a6;
+  animation: ag-float 3.2s ease-in-out infinite; }
+.town-zzz.z2 { font-size: 12px; animation-delay: 1.4s; }
+.star { animation: town-twinkle 4s ease-in-out infinite; }
+.star:nth-child(3n) { animation-delay: 1.3s; }
+.star:nth-child(3n+1) { animation-delay: 2.6s; }
+@keyframes town-smoke {
+  0% { transform: translateY(0); opacity: 0; }
+  20% { opacity: 0.55; }
+  100% { transform: translateY(-34px); opacity: 0; }
+}
+@keyframes town-flicker { 0%, 100% { opacity: 1; } 52% { opacity: 0.86; } 55% { opacity: 1; } 70% { opacity: 0.92; } }
+@keyframes town-twinkle { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) {
+  .smoke, .porch, .win-lit, .town-zzz, .star, .lamp { animation: none !important; }
+  .smoke { opacity: 0.4; }
+}
+
 /* ---------- mobile ---------- */
 .card { overflow-x: auto; }
 @media (max-width: 720px) {
