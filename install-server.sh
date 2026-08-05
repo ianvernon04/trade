@@ -20,6 +20,19 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$DIR/server.log"
 URL="http://127.0.0.1:8000"
 
+# Resolved at install time, and launchd is pointed at this binary directly
+# rather than at `bash -lc './run.sh'`.
+#
+# Two reasons. The minor one: launchd's PATH is minimal, so uvicorn has to be
+# absolute anyway. The one that actually bites: when the repo lives under a
+# TCC-protected directory (~/Desktop, ~/Documents, ~/Downloads), a
+# launchd-spawned bash cannot exec a script inside it and dies with
+# "Operation not permitted" — forever, silently, in a KeepAlive loop.
+# Executing an interpreter that lives outside the protected path and pointing
+# its working directory inside is allowed, so this sidesteps the whole class
+# of problem without asking anyone to grant Full Disk Access.
+UVICORN="$(command -v uvicorn || true)"
+
 if [[ "$(uname)" != "Darwin" ]]; then
   echo "This installer is macOS-only (it uses launchd). On Linux, use a"
   echo "systemd unit or just run ./run.sh under tmux/screen." >&2
@@ -63,11 +76,19 @@ if curl -s --max-time 3 -o /dev/null "$URL"; then
   fi
 fi
 
+if [[ -z "$UVICORN" ]]; then
+  echo "error: uvicorn not found on PATH — run 'pip install -r requirements.txt'" >&2
+  echo "       first, then re-run this installer." >&2
+  exit 127
+fi
+
 mkdir -p "$HOME/Library/LaunchAgents"
 launchctl unload -w "$PLIST" 2>/dev/null || true
 
-# -l gives a login-shell PATH so python3/pip resolve the same way they do in
-# your terminal; run.sh handles deps and the actual uvicorn invocation.
+# Dependencies are NOT installed here the way run.sh does it — launchd should
+# start a server, not run pip on every login. The uvicorn check above is the
+# stand-in: if the environment can't import the app, this fails at install
+# time where someone is reading the output.
 cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -76,10 +97,14 @@ cat > "$PLIST" <<PLIST
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
-    <string>-lc</string>
-    <string>cd '$DIR' &amp;&amp; exec ./run.sh</string>
+    <string>$UVICORN</string>
+    <string>app.main:app</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>8000</string>
   </array>
+  <key>WorkingDirectory</key><string>$DIR</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>30</integer>
