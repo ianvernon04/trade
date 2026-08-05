@@ -172,6 +172,13 @@ Inspect or change any of it with `python -m app autonomy status` / `set`:
   unrecognized strategy counts as undefined risk, never as safe.
 - **Known worst case required** — no order whose max loss can't be stated as
   a number.
+- **Strategy allowlist** (`long_call, long_put, long_stock, stock`) — this one
+  is a *broker* limit, not a risk judgment. Robinhood's agentic accounts
+  accept long equity and long option orders only, so a debit spread is
+  perfectly defined-risk and still unplaceable. Without this the gate would
+  approve a spread, the broker would reject it, and the run would have spent
+  its one daily slot on an order that could never fill. The Agentic account's
+  `option_level_2` independently rules out spreads, so the two agree.
 
 These thresholds are defaults chosen because the owner declined to specify
 them when asked — deliberately conservative *because* nobody's watching.
