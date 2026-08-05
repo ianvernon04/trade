@@ -427,6 +427,32 @@ def mark_read(to_agent: str, ids: list[int] | None = None) -> int:
         return cur.rowcount
 
 
+# The agents that report to the Trader, and the event kind each one logs per
+# scan. Adding a row here is what puts a new agent on the Neighborhood street.
+TOWN_RESIDENTS = {
+    "analyst": "news_scan",
+    "position_manager": "position_scan",
+    "risk_manager": "risk_scan",
+    "pattern_engine": "pattern_scan",
+}
+
+
+def agent_status(agent_id: str, scan_kind: str, since: str | None = None) -> dict:
+    """What the Neighborhood needs to draw one agent's house.
+
+    Every non-Trader agent answers the same two questions: when did you last
+    run and what did you find (``last_scan``), and how much mail have you
+    sent since ``since`` (``sent_today``). Keeping this here rather than in
+    the route means a new agent joins the street by naming its scan kind,
+    and that the wiring is testable without booting the web app.
+    """
+    scans = list_events(kind=scan_kind, limit=1)
+    return {
+        "last_scan": scans[0] if scans else None,
+        "sent_today": len(messages_sent(agent_id, since=since, limit=1000)),
+    }
+
+
 def messages_sent(from_agent: str, since: str | None = None, limit: int = 200) -> list[dict]:
     q, args = "SELECT * FROM agent_messages WHERE from_agent = ?", [from_agent]
     if since:
