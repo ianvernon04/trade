@@ -93,6 +93,79 @@ unrequested friction either.
   the stakes warrant it. Options can lose 100% of premium — naked positions
   can lose more.
 
+## Autonomous mode
+
+The account owner asked for a version of this agent that can trade **without
+a live conversation** — e.g. invoked headlessly on a schedule. The rules
+above assume a human is present to say "yes" to each order; autonomous mode
+has no one there, so it cannot use them as written. This section is what
+replaces live approval, and it is deliberately narrower than what's allowed
+when the owner is actually chatting with you.
+
+**How you know you're in this mode:** you were started non-interactively
+(e.g. `claude -p "..."`) for the express purpose of running the routine
+below, with no human watching in real time. If there's any doubt — if this
+could be a live conversation — treat it as live mode and follow the rules
+above instead; autonomous mode is the exception, not the default.
+
+**The routine:**
+1. `python -m app evaluate` then `python -m app report --days 30`. If the
+   last 30 days have 5+ graded decisions and a hit rate under 40%, stop —
+   log a note explaining why (`python -m app log note --note "..."`) and do
+   not place any trades this run. A cold streak is exactly when autonomous
+   size should shrink to zero, not when it should keep firing.
+2. `python -m app scan` (or `GET /api/scan` if the server's up) to rank
+   today's setups.
+3. A setup may be **traded automatically only if every one of these hold**:
+   - `crossed_buy` or `crossed_sell` is true (a fresh threshold cross, not
+     just an already-established score) **and** `confluence` is `"agree"`
+     (daily and weekly timeframes agree) — this is deliberately a higher bar
+     than the live-chat rules use, since no human is sanity-checking it.
+   - `earnings_in_days` is `null` or beyond the option's expiry — skip
+     entirely (log a note, no trade) if earnings fall before expiry. IV-crush
+     judgment calls need a human; autonomous mode doesn't make them.
+   - The structure is **defined-risk only** — a long call/put, or a vertical
+     spread. Naked/undefined-risk options are allowed in live chat because
+     you can hear the account owner explicitly accept that specific risk;
+     with nobody listening, autonomous mode never opens one, full stop.
+   - Total premium/cost is **at or under $300** and this would be the
+     **only** new autonomous position opened today. (Live chat has no hard
+     cap because the owner's live approval *is* the check; here, nothing
+     plays that role, so a cap does.)
+   Anything that fails any of these gets logged as a decision/note and
+   skipped — not executed, not deferred for "next time," just recorded for
+   the owner to review later.
+4. For a setup that clears all four gates: log the proposal
+   (`python -m app log proposal ...`) with the exact contract *before*
+   calling the order tool, place it, then log the resulting order/fill and
+   link it with `--order-id` — identical to the live-chat discipline above.
+5. Whether or not anything traded, end by logging a `note` event summarizing
+   the run (what was scanned, what passed/failed the gates, what happened)
+   so a human reading the diary later has the full picture without needing
+   to have watched it happen.
+
+These specific thresholds (30-day/40%/5-call circuit breaker, $300 cap, one
+position/day, defined-risk-only) are defaults chosen because the owner
+declined to specify them when asked — not a guess at generic best practice.
+They're deliberately conservative *because* nobody's watching. Change them
+by editing this section directly.
+
+**What you're on your own to verify before trusting this with real money —**
+none of this could be tested from the sandbox that built it:
+- **This needs a scheduler on your own machine.** Nothing in this repo
+  creates one. On macOS, `crontab -e` and a line like
+  `0 9 * * 1-5 cd ~/Desktop/trade && claude -p "Run the autonomous mode routine in CLAUDE.md" >> autolog.txt 2>&1`
+  runs it weekdays at 9am — adjust the path and time, and confirm
+  `claude --help` still shows `-p`/`--print` on your installed version.
+- **Robinhood re-authentication in a headless run is unverified.** `/mcp`
+  login opens a real browser; whether that session's credentials survive a
+  scheduled, unattended invocation days later is untested. Watch the first
+  few scheduled runs in real time (check `autolog.txt` and `python -m app
+  report` right after) before trusting one to run unwatched overnight.
+- **Robinhood's terms of service for automated order submission through
+  their conversational interface haven't been checked.** Confirm this is
+  permitted before relying on it.
+
 ## CLI reference
 
 ```
@@ -101,6 +174,7 @@ python -m app decide --ticker NVDA --action call --price 181.2 --rationale "..."
 python -m app log proposal --ticker NVDA --note "<exact order ticket stated in chat>"
 python -m app log order --ticker NVDA --source robinhood-mcp --payload '{...}' | @file | -
 python -m app ingest --payload - [--kind positions] [--source robinhood-mcp]
+python -m app scan [--tickers AAPL,MSFT,...] [--json]  # rank today's setups (autonomous mode)
 python -m app evaluate [--period 1y]        # grade matured decisions
 python -m app report [--days 30]            # activity + track record
 python -m app events / decisions [--pending] [--json]
