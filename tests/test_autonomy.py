@@ -152,6 +152,44 @@ class TestAllowlist(GateTestCase):
         self.assertTrue(any("no ticker" in r for r in v["reasons"]))
 
 
+class TestStrategyAllowlist(GateTestCase):
+    """Robinhood's agentic accounts take long orders only, so a spread can be
+    defined-risk and still unplaceable. The gate has to catch that here rather
+    than let the broker reject it after a daily slot is spent."""
+
+    def test_empty_allowlist_restricts_nothing(self):
+        self.assertEqual(autonomy.DEFAULTS["allowed_strategies"], [])
+        self.assertTrue(autonomy.check_order(LONG_CALL, policy=self.enabled(),
+                                             now=NOW)["allowed"])
+
+    def test_long_only_permits_long_call(self):
+        policy = self.enabled(allowed_strategies=autonomy.LONG_ONLY)
+        self.assertTrue(autonomy.check_order(LONG_CALL, policy=policy, now=NOW)["allowed"])
+
+    def test_long_only_blocks_defined_risk_spread(self):
+        policy = self.enabled(allowed_strategies=autonomy.LONG_ONLY)
+        spread = {**LONG_CALL, "strategy": "debit_spread"}
+        # It is genuinely defined-risk — that is the point of the test.
+        self.assertEqual(autonomy.check_order(spread, policy=policy, now=NOW)["risk_kind"],
+                         "defined")
+        v = autonomy.check_order(spread, policy=policy, now=NOW)
+        self.assertFalse(v["allowed"])
+        self.assertTrue(any("allowlist" in r for r in v["reasons"]))
+
+    def test_strategy_name_is_normalized_before_matching(self):
+        policy = self.enabled(allowed_strategies=autonomy.LONG_ONLY)
+        for spelling in ("Long Call", "LONG-CALL", " long_call "):
+            order = {**LONG_CALL, "strategy": spelling}
+            self.assertTrue(autonomy.check_order(order, policy=policy, now=NOW)["allowed"],
+                            f"{spelling!r} should match long_call")
+
+    def test_unspecified_strategy_denied_under_allowlist(self):
+        policy = self.enabled(allowed_strategies=autonomy.LONG_ONLY)
+        order = {k: v for k, v in LONG_CALL.items() if k != "strategy"}
+        v = autonomy.check_order(order, policy=policy, now=NOW)
+        self.assertFalse(v["allowed"])
+
+
 class TestPolicyPersistence(GateTestCase):
     def test_roundtrip_and_coercion(self):
         autonomy.save_policy({"per_trade_max_usd": "500", "max_trades_per_day": "3",
@@ -176,6 +214,11 @@ class TestPolicyPersistence(GateTestCase):
     def test_allowlist_accepts_comma_string(self):
         p = autonomy.save_policy({"allowed_tickers": "spy, qqq"})
         self.assertEqual(p["allowed_tickers"], ["SPY", "QQQ"])
+
+    def test_strategies_persist_lowercased_not_uppercased(self):
+        # Tickers upper, strategies lower — one list coercion can't do both.
+        p = autonomy.save_policy({"allowed_strategies": "Long Call, LONG-PUT"})
+        self.assertEqual(p["allowed_strategies"], ["long_call", "long_put"])
 
 
 class TestRecording(GateTestCase):

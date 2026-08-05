@@ -19,6 +19,9 @@ fails closed:
 - An unknown or unbounded max loss is a denial, not a shrug.
 - Caps are per-trade *and* per-day, so one bad read can't compound while
   nobody is watching.
+- A strategy may be defined-risk in theory and still be unplaceable in
+  practice; ``allowed_strategies`` exists to say what the *broker* accepts,
+  which is a narrower question than what is survivable.
 
 Policy lives in ``autonomy.json`` in the repo root (gitignored — it is local
 state, and a committed "enabled: true" would be a foot-gun). Missing file
@@ -52,7 +55,16 @@ DEFAULTS: dict[str, Any] = {
     "defined_risk_only": True,     # no naked/undefined-risk positions unattended
     "require_max_loss": True,      # refuse anything whose worst case isn't a number
     "allowed_tickers": [],         # empty = no allowlist restriction
+    "allowed_strategies": [],      # empty = no restriction; see LONG_ONLY below
 }
+
+# What Robinhood's agentic accounts actually accept: "long equities and
+# options orders" — no spreads, no short legs. A debit spread is perfectly
+# defined-risk and would still be rejected at the broker, so pass this as
+# ``allowed_strategies`` to fail fast here instead of burning a daily slot on
+# an order that cannot fill:
+#     python -m app autonomy set --key allowed_strategies --value long_call,long_put,long_stock,stock
+LONG_ONLY = ["long_call", "long_put", "long_stock", "stock"]
 
 # Strategies whose worst case is bounded and knowable up front.
 DEFINED_RISK = {
@@ -98,8 +110,13 @@ def save_policy(updates: dict) -> dict:
         elif want is bool:
             v = v if isinstance(v, bool) else str(v).strip().lower() in ("1", "true", "yes", "on")
         elif want is list:
-            v = [str(x).upper().strip() for x in (v if isinstance(v, list) else str(v).split(","))
-                 if str(x).strip()]
+            items = [str(x).strip() for x in (v if isinstance(v, list) else str(v).split(","))
+                     if str(x).strip()]
+            # Tickers are conventionally upper; strategy names are keyed in the
+            # same lower_snake form _normalize_strategy produces, so a value
+            # typed as "Long Call" still matches.
+            v = ([s.lower().replace("-", "_").replace(" ", "_") for s in items]
+                 if k == "allowed_strategies" else [s.upper() for s in items])
         policy[k] = v
     if policy["per_trade_max_usd"] < 0 or policy["max_trades_per_day"] < 0:
         raise ValueError("caps cannot be negative")
@@ -119,13 +136,17 @@ def trades_today(now: datetime | None = None) -> int:
 
 # ---------- the gate ----------
 
+def _normalize_strategy(order: dict) -> str:
+    """Strategy name in the canonical lower_snake form the sets are keyed by."""
+    return str(order.get("strategy") or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
 def _risk_kind(order: dict) -> str:
     """'defined' | 'undefined' — unknown strategies fail closed as undefined."""
     explicit = order.get("defined_risk")
     if isinstance(explicit, bool):
         return "defined" if explicit else "undefined"
-    strategy = str(order.get("strategy") or "").strip().lower().replace("-", "_").replace(" ", "_")
-    if strategy in DEFINED_RISK:
+    if _normalize_strategy(order) in DEFINED_RISK:
         return "defined"
     return "undefined"
 
@@ -175,6 +196,15 @@ def check_order(order: dict, policy: dict | None = None,
     if allowlist and ticker and ticker not in allowlist:
         reasons.append(f"{ticker} is not in the autonomous allowlist {allowlist}")
 
+    strategy_name = _normalize_strategy(order)
+    strategy_allowlist = policy.get("allowed_strategies") or []
+    if strategy_allowlist and strategy_name not in strategy_allowlist:
+        reasons.append(
+            f"strategy '{strategy_name or 'unspecified'}' is not in the autonomous "
+            f"strategy allowlist {strategy_allowlist} — this list is what the broker "
+            "will actually accept unattended, which is narrower than what is "
+            "defined-risk")
+
     risk_kind = _risk_kind(order)
     if risk_kind == "undefined":
         strategy = order.get("strategy") or "unspecified"
@@ -213,6 +243,7 @@ def check_order(order: dict, policy: dict | None = None,
         "reasons": reasons,
         "warnings": warnings,
         "ticker": ticker or None,
+        "strategy": strategy_name or None,
         "risk_kind": risk_kind,
         "worst_case_usd": None if cost is None else (
             "unbounded" if cost == float("inf") else round(cost, 2)),
