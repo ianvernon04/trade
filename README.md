@@ -78,17 +78,17 @@ The repo doubles as a Claude Code agent workspace wired to Robinhood:
 - **Agent tracking** (`app/tracking.py`) records what the agent does in two
   tables inside `journal.db`: `agent_events` (orders, fills, positions, data
   pulls — raw payloads preserved) and `agent_decisions` (every
-  recommendation with its full signal snapshot). `python -m app evaluate`
+  recommendation with its full signal snapshot). `python3 -m app evaluate`
   later grades each directional call against the realized forward move, so
-  `python -m app report` shows the agent's actual hit rate — the same
+  `python3 -m app report` shows the agent's actual hit rate — the same
   self-accountability the scorecard applies to the signal.
 
 The console works standalone too:
 
 ```bash
-python -m app analyze NVDA --options   # signal brief, records the decision
-python -m app report                   # activity + graded track record
-python -m app export --out backup.json # journal.db is gitignored; back it up
+python3 -m app analyze NVDA --options   # signal brief, records the decision
+python3 -m app report                   # activity + graded track record
+python3 -m app export --out backup.json # journal.db is gitignored; back it up
 ```
 
 Everything is also exposed under `/api/tracking/*` when the server runs.
