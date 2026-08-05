@@ -452,6 +452,85 @@ def cmd_autonomy(args) -> int:
     return 2
 
 
+def cmd_position_scan(args) -> int:
+    """One Position Manager cycle: scan open positions, log, mail the Trader."""
+    from . import positionagent
+    res = positionagent.run_scan(user_id=args.user_id, send=not args.no_send)
+
+    def human(o):
+        a = o["analysis"]
+        print(f"Scanned {a['n_positions']} open position(s), "
+              f"${a['theta_sum']:.0f}/day portfolio theta")
+        print(f"Identified {len(a['actions'])} action(s):")
+        for act in a["actions"]:
+            print(f"  {act['ticker']:<6} {act.get('type', 'monitor')}: "
+                  + "; ".join(act.get("alerts", ["no details"])))
+        if o["delivered"]:
+            print("Delivered to trader:")
+            for m in o["delivered"]:
+                flag = "❗" if m["priority"] == "high" else "·"
+                print(f"  {flag} {m['subject']}")
+        if o["deduped"]:
+            print(f"({o['deduped']} message(s) suppressed as recent duplicates)")
+
+    _out(res, args.json, human)
+    return 0
+
+
+def cmd_risk_scan(args) -> int:
+    """One Risk Manager cycle: analyze portfolio Greeks, log, mail the Trader."""
+    from . import riskagent
+    res = riskagent.run_scan(send=not args.no_send)
+
+    def human(o):
+        a = o["analysis"]
+        print(f"Portfolio: Δ{a['net_delta']:+.0f}, Θ${a['net_theta']:+.0f}/day, "
+              f"{a['n_positions']} position(s), {a['risk_level'].upper()} risk")
+        if a["issues"]:
+            print(f"Identified {len(a['issues'])} risk issue(s):")
+            for issue in a["issues"]:
+                print(f"  {issue['type'].replace('_', ' ').title()}: {issue['note'][:80]}")
+        if o["delivered"]:
+            print("Delivered to trader:")
+            for m in o["delivered"]:
+                flag = "❗" if m["priority"] == "high" else "·"
+                print(f"  {flag} {m['subject']}")
+        if o["deduped"]:
+            print(f"({o['deduped']} message(s) suppressed as recent duplicates)")
+
+    _out(res, args.json, human)
+    return 0
+
+
+def cmd_pattern_scan(args) -> int:
+    """One Pattern Engine cycle: analyze decision history, log, mail the Trader."""
+    from . import patternagent
+    res = patternagent.run_scan(send=not args.no_send)
+
+    def human(o):
+        a = o["analysis"]
+        if a.get("status") != "ok":
+            print(f"Pattern analysis: {a.get('status')} "
+                  f"({a.get('n_decisions', 0)}/{a['min_required']} required decisions)")
+            return
+        findings = a.get("findings", [])
+        print(f"Analyzed {a['n_decisions']} graded decision(s), "
+              f"found {len(findings)} high-confidence pattern(s)")
+        for f in findings[:8]:  # show top 8
+            print(f"  {f['category'].replace('_', ' ').title()}: {f['bucket']} "
+                  f"({f['win_rate']*100:.0f}% win rate, n={f['sample_size']})")
+        if o["delivered"]:
+            print("Delivered to trader:")
+            for m in o["delivered"]:
+                flag = "❗" if m["priority"] == "high" else "·"
+                print(f"  {flag} {m['subject']}")
+        if o["deduped"]:
+            print(f"({o['deduped']} message(s) suppressed as recent duplicates)")
+
+    _out(res, args.json, human)
+    return 0
+
+
 def cmd_export(args) -> int:
     dump = json.dumps(tracking.export_all(), indent=2, default=str)
     if args.out:
@@ -550,6 +629,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--no-send", action="store_true", help="analyze and log only, deliver no mail")
     jflag(sp)
     sp.set_defaults(fn=cmd_news_scan)
+
+    sp = sub.add_parser("position-scan", help="run one Position Manager cycle: positions → analysis → trader inbox")
+    sp.add_argument("--user-id", type=int, help="scan one user; default: all users")
+    sp.add_argument("--no-send", action="store_true", help="analyze and log only, deliver no mail")
+    jflag(sp)
+    sp.set_defaults(fn=cmd_position_scan)
+
+    sp = sub.add_parser("risk-scan", help="run one Risk Manager cycle: portfolio Greeks → analysis → trader inbox")
+    sp.add_argument("--no-send", action="store_true", help="analyze and log only, deliver no mail")
+    jflag(sp)
+    sp.set_defaults(fn=cmd_risk_scan)
+
+    sp = sub.add_parser("pattern-scan", help="run one Pattern Engine cycle: history → patterns → trader inbox")
+    sp.add_argument("--no-send", action="store_true", help="analyze and log only, deliver no mail")
+    jflag(sp)
+    sp.set_defaults(fn=cmd_pattern_scan)
 
     sp = sub.add_parser("inbox", help="read an agent's messages")
     sp.add_argument("--agent", default="trader", help="whose inbox (default: trader)")
