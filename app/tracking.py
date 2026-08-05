@@ -67,6 +67,21 @@ CREATE TABLE IF NOT EXISTS agent_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_events_ts ON agent_events (ts);
 CREATE INDEX IF NOT EXISTS idx_agent_decisions_ticker ON agent_decisions (ticker, ts);
+CREATE TABLE IF NOT EXISTS agent_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    from_agent TEXT NOT NULL,          -- analyst | trader | user | ...
+    to_agent TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'briefing',   -- briefing | alert | note
+    priority TEXT NOT NULL DEFAULT 'normal', -- normal | high
+    ticker TEXT,
+    subject TEXT NOT NULL,
+    body TEXT,
+    payload TEXT,
+    read_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_agent_messages_to ON agent_messages (to_agent, read_at);
 """
 
 ACTIONS = ("buy", "sell", "call", "put", "hold", "no_trade")
@@ -331,6 +346,99 @@ def summary(days: int | None = None) -> dict:
                                                 "fwd_return_pct", "hit")}
                              for d in all_dec[:10]],
     }
+
+
+# ---------- inter-agent messages ----------
+# The bus the agents talk over: the analyst drops briefings/alerts here, the
+# trader reads its inbox at the start of every session and every autonomous
+# run. Plain rows in the shared DB — durable, auditable, no network needed.
+
+def send_message(from_agent: str, to_agent: str, subject: str,
+                 body: str | None = None, kind: str = "briefing",
+                 priority: str = "normal", ticker: str | None = None,
+                 payload: Any = None, dedupe_hours: float | None = None,
+                 ts: str | None = None) -> dict:
+    """Deliver a message; with ``dedupe_hours`` an identical recent
+    (from, to, kind, subject) is not re-sent — the scanner runs every few
+    minutes, and the trader's inbox should not be 40 copies of one story."""
+    if not subject or not subject.strip():
+        raise ValueError("subject is required")
+    if dedupe_hours:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=dedupe_hours)) \
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
+        with _conn() as c:
+            dup = c.execute(
+                "SELECT id, ts FROM agent_messages WHERE from_agent = ? AND to_agent = ? "
+                "AND kind = ? AND subject = ? AND ts >= ? LIMIT 1",
+                (from_agent, to_agent, kind, subject.strip(), cutoff)).fetchone()
+        if dup:
+            return {"id": dup["id"], "ts": dup["ts"], "subject": subject.strip(),
+                    "deduped": True}
+    row = {
+        "ts": ts or _now(),
+        "from_agent": from_agent, "to_agent": to_agent,
+        "kind": kind, "priority": priority,
+        "ticker": ticker.upper().strip() if ticker else None,
+        "subject": subject.strip(), "body": body,
+        "payload": _dump(payload),
+    }
+    with _lock, _conn() as c:
+        cur = c.execute(
+            "INSERT INTO agent_messages (ts, from_agent, to_agent, kind, priority, ticker, "
+            "subject, body, payload) VALUES (:ts, :from_agent, :to_agent, :kind, :priority, "
+            ":ticker, :subject, :body, :payload)", row)
+        row["id"] = cur.lastrowid
+    row["payload"] = _load(row["payload"])
+    row["deduped"] = False
+    return row
+
+
+def inbox(to_agent: str, unread_only: bool = False, limit: int = 100) -> list[dict]:
+    q, args = "SELECT * FROM agent_messages WHERE to_agent = ?", [to_agent]
+    if unread_only:
+        q += " AND read_at IS NULL"
+    q += " ORDER BY CASE priority WHEN 'high' THEN 0 ELSE 1 END, ts DESC, id DESC LIMIT ?"
+    args.append(max(1, min(int(limit), 1000)))
+    with _conn() as c:
+        rows = [dict(r) for r in c.execute(q, args).fetchall()]
+    for r in rows:
+        r["payload"] = _load(r["payload"])
+    return rows
+
+
+def unread_count(to_agent: str) -> int:
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) FROM agent_messages WHERE to_agent = ? "
+                         "AND read_at IS NULL", (to_agent,)).fetchone()[0]
+
+
+def mark_read(to_agent: str, ids: list[int] | None = None) -> int:
+    """Mark messages read — specific ids, or the whole inbox when ids is None."""
+    stamp = _now()
+    with _lock, _conn() as c:
+        if ids:
+            marks = ",".join("?" for _ in ids)
+            cur = c.execute(
+                f"UPDATE agent_messages SET read_at = ? WHERE to_agent = ? "
+                f"AND read_at IS NULL AND id IN ({marks})", [stamp, to_agent, *ids])
+        else:
+            cur = c.execute("UPDATE agent_messages SET read_at = ? WHERE to_agent = ? "
+                            "AND read_at IS NULL", (stamp, to_agent))
+        return cur.rowcount
+
+
+def messages_sent(from_agent: str, since: str | None = None, limit: int = 200) -> list[dict]:
+    q, args = "SELECT * FROM agent_messages WHERE from_agent = ?", [from_agent]
+    if since:
+        q += " AND ts >= ?"
+        args.append(since)
+    q += " ORDER BY ts DESC, id DESC LIMIT ?"
+    args.append(max(1, min(int(limit), 1000)))
+    with _conn() as c:
+        rows = [dict(r) for r in c.execute(q, args).fetchall()]
+    for r in rows:
+        r["payload"] = _load(r["payload"])
+    return rows
 
 
 # ---------- Robinhood MCP payload ingestion ----------
