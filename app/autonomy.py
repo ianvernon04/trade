@@ -48,7 +48,7 @@ POLICY_PATH = Path(__file__).resolve().parent.parent / "autonomy.json"
 DEFAULTS: dict[str, Any] = {
     "enabled": False,              # kill switch — nothing autonomous runs while False
     "per_trade_max_usd": 300.0,    # max cost/max-loss for ONE unattended trade
-    "max_trades_per_day": 2,       # cap on unattended orders per UTC day
+    "max_trades_per_day": 1,       # cap on unattended orders per UTC day
     "defined_risk_only": True,     # no naked/undefined-risk positions unattended
     "require_max_loss": True,      # refuse anything whose worst case isn't a number
     "allowed_tickers": [],         # empty = no allowlist restriction

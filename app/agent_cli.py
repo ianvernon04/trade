@@ -190,6 +190,36 @@ def cmd_ingest(args) -> int:
     return 0
 
 
+# ---------- scan (headless-friendly market sweep, for autonomous mode) ----------
+
+def cmd_scan(args) -> int:
+    from . import scanner
+    syms = [s.strip().upper() for s in args.tickers.split(",") if s.strip()] if args.tickers else None
+    d = scanner.scan(syms)
+
+    def human(o):
+        print(f"Scan generated {o['generated_at']}")
+        for s in o["setups"]:
+            if s.get("error"):
+                print(f"  ! {s['ticker']}: {s['error']}")
+                continue
+            flags = []
+            if s["crossed_buy"]:
+                flags.append("BUY-cross")
+            if s["crossed_sell"]:
+                flags.append("SELL-cross")
+            if s["confluence"] == "agree":
+                flags.append("weekly-agrees")
+            if s["earnings_in_days"] is not None and s["earnings_in_days"] <= 7:
+                flags.append(f"earnings-{s['earnings_in_days']}d")
+            print(f"  {s['ticker']:<6} {s['score']:+6.1f} {s['label']:<12} "
+                  f"rank {s['rank']:>5.1f}  {' '.join(flags)}")
+        print(o["note"])
+
+    _out(d, args.json, human)
+    return 0
+
+
 # ---------- evaluate / report / lists / export ----------
 
 def cmd_evaluate(args) -> int:
@@ -420,6 +450,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--kind", help="hint when the shape is ambiguous: orders|positions|fills")
     jflag(sp)
     sp.set_defaults(fn=cmd_ingest)
+
+    sp = sub.add_parser("scan", help="rank the watchlist's best setups right now (needs network)")
+    sp.add_argument("--tickers", help="comma-separated; default is the app's watchlist")
+    jflag(sp)
+    sp.set_defaults(fn=cmd_scan)
 
     sp = sub.add_parser("evaluate", help="grade matured decisions against real prices")
     sp.add_argument("--period", default="1y", help="history window used for grading")

@@ -4,3 +4,6 @@ journal.db
 autonomy.json
 .venv/
 venv/
+autotrade.log
+cron-stderr.log
+.autotrade.lock/
