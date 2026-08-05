@@ -55,23 +55,134 @@ these rules in every session:
 
 ## Real-money safety rules
 
-- **Confirm before execution.** Never place, modify, or cancel a live order
-  through the MCP server without the user explicitly approving that exact
-  order (ticker, side, quantity, price/type) in this conversation — a
-  standing "trade for me" is not enough for a specific new order.
-- Respect any size/risk limits the user states; when none are stated, ask.
-- Surface the app's warnings before options trades: earnings-before-expiry
-  (IV crush), elevated IV percentile, macro events (`/api/calendar`).
+These are the specific risk rules the account owner chose after being asked
+directly (2026-08-05) — not generic best practices. Follow them exactly:
+don't loosen them because a trade "seems obviously fine," and don't add
+unrequested friction either.
+
+- **Every order needs its own explicit "yes" in this conversation before you
+  call any Robinhood order-placing tool — no exceptions.** A standing "trade
+  for me" from earlier does not count as approval for a new, specific order.
+  Ceremony scales with size:
+  - **Under $300 total premium/cost:** state the trade in one line (ticker,
+    contract, side, qty, approx cost) and get a plain yes.
+  - **$300 or more:** lay out a full order ticket first — exact contract
+    (ticker, strike, expiry, call/put, side, qty, limit/market), total cost,
+    and max loss — then get explicit approval of that ticket.
+- **No hard position-size cap is set.** Always state the size and total
+  cost/max-loss plainly as part of the confirmation above — the human
+  approval *is* the size check here, since nothing caps it automatically.
+- **Undefined-risk (naked) options are allowed.** Every time one is
+  proposed, regardless of size, state the actual worst case in plain
+  language before asking for approval:
+  - Naked short call: loss is not capped — it grows as the stock keeps
+    rising, with no ceiling.
+  - Naked short put: max loss is strike × 100 × contracts if the stock goes
+    to zero.
+  Get explicit approval of *that specific risk*, not just the trade idea.
+- **Options-specific warnings still apply no matter the ceremony tier:**
+  earnings-before-expiry (IV crush), elevated IV percentile, and upcoming
+  macro events (`/api/calendar`) — surface these before any options trade.
+- **Log the proposal, not just the fill.** The moment you state a ticket —
+  before calling the order tool — record it:
+  `python -m app log proposal --ticker X --note "<the exact ticket stated>"`.
+  That's the durable proof of what was actually proposed and approved,
+  independent of chat scrollback. Log the resulting order/fill as required
+  below once the tool returns, and link them with `--order-id` where possible.
 - Signals here are educational analytics, not financial advice; say so when
-  the stakes warrant it. Options can lose 100% of premium.
+  the stakes warrant it. Options can lose 100% of premium — naked positions
+  can lose more.
+
+## Autonomous mode
+
+The account owner asked for a version of this agent that can trade **without
+a live conversation** — e.g. invoked headlessly on a schedule. The rules
+above assume a human is present to say "yes" to each order; autonomous mode
+has no one there, so it cannot use them as written. This section is what
+replaces live approval, and it is deliberately narrower than what's allowed
+when the owner is actually chatting with you.
+
+**How you know you're in this mode:** you were started non-interactively
+(e.g. `claude -p "..."`) for the express purpose of running the routine
+below, with no human watching in real time. If there's any doubt — if this
+could be a live conversation — treat it as live mode and follow the rules
+above instead; autonomous mode is the exception, not the default.
+
+**The routine:**
+1. `python -m app evaluate` then `python -m app report --days 30`. If the
+   last 30 days have 5+ graded decisions and a hit rate under 40%, stop —
+   log a note explaining why (`python -m app log note --note "..."`) and do
+   not place any trades this run. A cold streak is exactly when autonomous
+   size should shrink to zero, not when it should keep firing.
+2. `python -m app scan` (or `GET /api/scan` if the server's up) to rank
+   today's setups.
+3. A setup may be **traded automatically only if every one of these hold**:
+   - `crossed_buy` or `crossed_sell` is true (a fresh threshold cross, not
+     just an already-established score) **and** `confluence` is `"agree"`
+     (daily and weekly timeframes agree) — this is deliberately a higher bar
+     than the live-chat rules use, since no human is sanity-checking it.
+   - `earnings_in_days` is `null` or beyond the option's expiry — skip
+     entirely (log a note, no trade) if earnings fall before expiry. IV-crush
+     judgment calls need a human; autonomous mode doesn't make them.
+   - The structure is **defined-risk only** — a long call/put, or a vertical
+     spread. Naked/undefined-risk options are allowed in live chat because
+     you can hear the account owner explicitly accept that specific risk;
+     with nobody listening, autonomous mode never opens one, full stop.
+   - Total premium/cost is **at or under $300** and this would be the
+     **only** new autonomous position opened today. (Live chat has no hard
+     cap because the owner's live approval *is* the check; here, nothing
+     plays that role, so a cap does.)
+   Anything that fails any of these gets logged as a decision/note and
+   skipped — not executed, not deferred for "next time," just recorded for
+   the owner to review later.
+4. For a setup that clears all four gates: log the proposal
+   (`python -m app log proposal ...`) with the exact contract *before*
+   calling the order tool, place it, then log the resulting order/fill and
+   link it with `--order-id` — identical to the live-chat discipline above.
+5. Whether or not anything traded, end by logging a `note` event summarizing
+   the run (what was scanned, what passed/failed the gates, what happened)
+   so a human reading the diary later has the full picture without needing
+   to have watched it happen.
+
+These specific thresholds (30-day/40%/5-call circuit breaker, $300 cap, one
+position/day, defined-risk-only) are defaults chosen because the owner
+declined to specify them when asked — not a guess at generic best practice.
+They're deliberately conservative *because* nobody's watching. Change them
+by editing this section directly.
+
+**Scheduling it.** `./install-autotrade.sh` installs a weekday cron entry
+that runs `autotrade.sh` (which invokes `claude -p` with the routine above);
+`--show` and `--remove` manage it. It defaults to **dry mode** — every gate
+runs and everything is logged, but no order tool is ever called — so the
+first runs prove the plumbing works before real money is involved.
+`./install-autotrade.sh live` switches it on for real. Output lands in
+`autotrade.log` (all gitignored).
+
+**What could not be verified from the sandbox that built this, and is
+therefore on you to confirm before trusting it with real money:**
+- **Robinhood auth surviving a headless run is untested.** `/mcp` login
+  opens a real browser; whether those credentials still work in a
+  scheduled, unattended run days later is unknown. This is exactly what dry
+  mode is for — if auth is dead, the log will show it and nothing traded.
+- **A hang means a permission prompt.** `claude -p` will wait forever on an
+  interactive tool-approval prompt no one is there to answer. If a run
+  produces no output past "starting run", see the `CLAUDE_FLAGS` comment in
+  `autotrade.sh`.
+- **Robinhood's terms of service for automated order submission through
+  their conversational interface haven't been checked.** Confirm this is
+  permitted before relying on it.
+- **cron only fires while the Mac is awake**, and macOS may ask to grant
+  cron file access the first time.
 
 ## CLI reference
 
 ```
 python -m app analyze NVDA [--options] [--weekly] [--horizon 10] [--json]
 python -m app decide --ticker NVDA --action call --price 181.2 --rationale "..." [--snapshot]
+python -m app log proposal --ticker NVDA --note "<exact order ticket stated in chat>"
 python -m app log order --ticker NVDA --source robinhood-mcp --payload '{...}' | @file | -
 python -m app ingest --payload - [--kind positions] [--source robinhood-mcp]
+python -m app scan [--tickers AAPL,MSFT,...] [--json]  # rank today's setups (autonomous mode)
 python -m app evaluate [--period 1y]        # grade matured decisions
 python -m app report [--days 30]            # activity + track record
 python -m app events / decisions [--pending] [--json]
