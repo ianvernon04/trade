@@ -61,8 +61,11 @@ don't loosen them because a trade "seems obviously fine," and don't add
 unrequested friction either.
 
 - **Every order needs its own explicit "yes" in this conversation before you
-  call any Robinhood order-placing tool — no exceptions.** A standing "trade
-  for me" from earlier does not count as approval for a new, specific order.
+  call any Robinhood order-placing tool.** A standing "trade for me" from
+  earlier does not count as approval for a new, specific order. The *only*
+  exception is an unattended autonomous run, which is governed by the
+  separate, narrower protocol below — if a human is present in the
+  conversation, this rule applies with no exceptions.
   Ceremony scales with size:
   - **Under $300 total premium/cost:** state the trade in one line (ticker,
     contract, side, qty, approx cost) and get a plain yes.
@@ -93,14 +96,14 @@ unrequested friction either.
   the stakes warrant it. Options can lose 100% of premium — naked positions
   can lose more.
 
-## Autonomous mode
+## Autonomous (unattended) trading
 
 The account owner asked for a version of this agent that can trade **without
-a live conversation** — e.g. invoked headlessly on a schedule. The rules
-above assume a human is present to say "yes" to each order; autonomous mode
-has no one there, so it cannot use them as written. This section is what
-replaces live approval, and it is deliberately narrower than what's allowed
-when the owner is actually chatting with you.
+a live conversation** — invoked headlessly on a schedule. The rules above
+assume a human is present to say "yes" to each order; here nobody is, so two
+things replace that yes: a **judgment bar deliberately higher than live
+chat's**, and a **risk gate enforced in code** (`app/autonomy.py`) rather
+than in prose. Both are mandatory.
 
 **How you know you're in this mode:** you were started non-interactively
 (e.g. `claude -p "..."`) for the express purpose of running the routine
@@ -108,63 +111,90 @@ below, with no human watching in real time. If there's any doubt — if this
 could be a live conversation — treat it as live mode and follow the rules
 above instead; autonomous mode is the exception, not the default.
 
-**The routine:**
-1. `python -m app evaluate` then `python -m app report --days 30`. If the
-   last 30 days have 5+ graded decisions and a hit rate under 40%, stop —
-   log a note explaining why (`python -m app log note --note "..."`) and do
-   not place any trades this run. A cold streak is exactly when autonomous
-   size should shrink to zero, not when it should keep firing.
+### The routine
+
+1. `python -m app evaluate` then `python -m app report --days 30`.
+   **Circuit breaker:** if the last 30 days have 5+ graded decisions and a
+   hit rate under 40%, stop — log a note explaining why and place no trades
+   this run. A cold streak is exactly when autonomous size should shrink to
+   zero, not when it should keep firing.
 2. `python -m app scan` (or `GET /api/scan` if the server's up) to rank
    today's setups.
-3. A setup may be **traded automatically only if every one of these hold**:
+3. **Entry-quality bar** — a setup may be considered only if *all* hold:
    - `crossed_buy` or `crossed_sell` is true (a fresh threshold cross, not
-     just an already-established score) **and** `confluence` is `"agree"`
-     (daily and weekly timeframes agree) — this is deliberately a higher bar
-     than the live-chat rules use, since no human is sanity-checking it.
-   - `earnings_in_days` is `null` or beyond the option's expiry — skip
-     entirely (log a note, no trade) if earnings fall before expiry. IV-crush
-     judgment calls need a human; autonomous mode doesn't make them.
-   - The structure is **defined-risk only** — a long call/put, or a vertical
-     spread. Naked/undefined-risk options are allowed in live chat because
-     you can hear the account owner explicitly accept that specific risk;
-     with nobody listening, autonomous mode never opens one, full stop.
-   - Total premium/cost is **at or under $300** and this would be the
-     **only** new autonomous position opened today. (Live chat has no hard
-     cap because the owner's live approval *is* the check; here, nothing
-     plays that role, so a cap does.)
-   Anything that fails any of these gets logged as a decision/note and
-   skipped — not executed, not deferred for "next time," just recorded for
-   the owner to review later.
-4. For a setup that clears all four gates: log the proposal
-   (`python -m app log proposal ...`) with the exact contract *before*
-   calling the order tool, place it, then log the resulting order/fill and
-   link it with `--order-id` — identical to the live-chat discipline above.
-5. Whether or not anything traded, end by logging a `note` event summarizing
-   the run (what was scanned, what passed/failed the gates, what happened)
-   so a human reading the diary later has the full picture without needing
-   to have watched it happen.
+     an already-established score) **and** `confluence` is `"agree"` (daily
+     and weekly timeframes agree). Deliberately a higher bar than live chat
+     uses, since no human is sanity-checking it.
+   - `earnings_in_days` is `null` or falls beyond the option's expiry. Skip
+     entirely if earnings land before expiry — IV-crush judgment calls need
+     a human, and autonomous mode doesn't make them.
+4. **Risk gate — run it on every order, no exceptions:**
 
-These specific thresholds (30-day/40%/5-call circuit breaker, $300 cap, one
-position/day, defined-risk-only) are defaults chosen because the owner
-declined to specify them when asked — not a guess at generic best practice.
-They're deliberately conservative *because* nobody's watching. Change them
-by editing this section directly.
+   ```
+   python -m app autonomy check --payload '{"ticker":"NVDA","strategy":"long_call",
+     "side":"buy","quantity":2,"strike":185,"expiry":"2026-09-18",
+     "limit_price":1.20,"est_cost":240,"max_loss":240}'
+   ```
 
-**Scheduling it.** `./install-autotrade.sh` installs a weekday cron entry
-that runs `autotrade.sh` (which invokes `claude -p` with the routine above);
-`--show` and `--remove` manage it. It defaults to **dry mode** — every gate
-runs and everything is logged, but no order tool is ever called — so the
-first runs prove the plumbing works before real money is involved.
-`./install-autotrade.sh live` switches it on for real. Output lands in
-`autotrade.log` (all gitignored).
+   Exit 0 = allowed, 1 = denied. **If it denies, do not place the order and
+   do not work around it** — log the denial and move on. Never edit the
+   policy mid-run to make a denied order pass: the policy is the owner's
+   standing instruction, not something to negotiate with.
 
-**What could not be verified from the sandbox that built this, and is
-therefore on you to confirm before trusting it with real money:**
+5. For an order that clears both the entry bar and the gate: log the
+   proposal (`python -m app log proposal ...`) with the exact contract
+   *before* calling the order tool, place it, then immediately record it so
+   it counts toward the daily cap and lands in the audit trail:
+
+   ```python
+   from app import autonomy
+   autonomy.record_autonomous_order(order, payload=<tool result JSON>)
+   ```
+
+   Link the decision with `--order-id` — identical to live-chat discipline.
+6. Whether or not anything traded, end by logging a `note` event summarizing
+   the run (what was scanned, what passed/failed, what happened) so a human
+   reading the diary later has the full picture.
+
+### What the gate enforces
+
+Inspect or change any of it with `python -m app autonomy status` / `set`:
+
+- **Kill switch** — off by default; nothing autonomous trades until the owner
+  runs `python -m app autonomy enable`.
+- **Per-trade cap** ($300) measured on *max loss*, not cost, so a credit
+  spread is judged by what it can actually lose.
+- **Daily trade cap** (1) counting only `source='autonomous'` orders, so
+  human-approved trades never consume the unattended budget.
+- **Defined-risk only** (on) — no naked positions unattended. Naked options
+  are permitted in live chat because the owner can hear and accept that
+  specific risk; with nobody listening, autonomous mode never opens one. An
+  unrecognized strategy counts as undefined risk, never as safe.
+- **Known worst case required** — no order whose max loss can't be stated as
+  a number.
+
+These thresholds are defaults chosen because the owner declined to specify
+them when asked — deliberately conservative *because* nobody's watching.
+Change them via `python -m app autonomy set`, not by editing prose.
+
+### Scheduling it
+
+`./install-autotrade.sh` installs a weekday cron entry that runs
+`autotrade.sh` (which invokes `claude -p` with the routine above); `--show`
+and `--remove` manage it. It defaults to **dry mode** — every gate runs and
+everything is logged, but no order tool is ever called — so the first runs
+prove the plumbing before real money is involved. `./install-autotrade.sh
+live` switches it on for real. Output lands in `autotrade.log` (gitignored).
+
+### What could not be verified from the sandbox that built this
+
+On you to confirm before trusting it with real money:
+
 - **Robinhood auth surviving a headless run is untested.** `/mcp` login
-  opens a real browser; whether those credentials still work in a
-  scheduled, unattended run days later is unknown. This is exactly what dry
-  mode is for — if auth is dead, the log will show it and nothing traded.
-- **A hang means a permission prompt.** `claude -p` will wait forever on an
+  opens a real browser; whether those credentials still work in a scheduled
+  run days later is unknown. This is what dry mode is for — if auth is dead,
+  the log shows it and nothing traded.
+- **A hang means a permission prompt.** `claude -p` waits forever on an
   interactive tool-approval prompt no one is there to answer. If a run
   produces no output past "starting run", see the `CLAUDE_FLAGS` comment in
   `autotrade.sh`.
@@ -173,6 +203,11 @@ therefore on you to confirm before trusting it with real money:**
   permitted before relying on it.
 - **cron only fires while the Mac is awake**, and macOS may ask to grant
   cron file access the first time.
+- **The gate cannot physically intercept an MCP call** — the broker tools
+  are directly reachable. It is a mandatory protocol step with a
+  deterministic, tested implementation and an audit trail, not a sandbox.
+  The kill switch (`python -m app autonomy disable`) and Robinhood's own
+  account controls are the hard stops.
 
 ## CLI reference
 
@@ -187,6 +222,10 @@ python -m app evaluate [--period 1y]        # grade matured decisions
 python -m app report [--days 30]            # activity + track record
 python -m app events / decisions [--pending] [--json]
 python -m app export --out backup.json      # journal.db is gitignored — this is the backup
+python -m app autonomy status               # unattended-trading policy + today's usage
+python -m app autonomy enable | disable     # the kill switch
+python -m app autonomy set --key per_trade_max_usd --value 300
+python -m app autonomy check --payload '{...}'   # exit 0 = allowed, 1 = denied
 ```
 
 Actions: `buy sell call put hold no_trade`. Decisions are graded on the

@@ -24,7 +24,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import tracking
+from . import autonomy, tracking
 
 # Signal labels map to recordable actions; an options recommendation can
 # upgrade buy/sell to call/put (see cmd_analyze).
@@ -318,6 +318,75 @@ def cmd_decisions(args) -> int:
     return 0
 
 
+def cmd_autonomy(args) -> int:
+    """Inspect or change the unattended-trading policy, or gate one order."""
+    if args.action == "status":
+        p = autonomy.load_policy()
+        used = autonomy.trades_today()
+
+        def human(_):
+            state = "ENABLED" if p["enabled"] else "DISABLED (kill switch off)"
+            print(f"Autonomous trading: {state}")
+            print(f"  per-trade cap:      ${p['per_trade_max_usd']:,.2f}")
+            print(f"  daily trade cap:    {p['max_trades_per_day']}  (used today: {used})")
+            print(f"  defined-risk only:  {p['defined_risk_only']}")
+            print(f"  require max loss:   {p['require_max_loss']}")
+            print(f"  ticker allowlist:   {p['allowed_tickers'] or 'none (any ticker)'}")
+            print(f"  policy file:        {autonomy.POLICY_PATH}")
+
+        _out({**p, "trades_today": used}, args.json, human)
+        return 0
+
+    if args.action in ("enable", "disable"):
+        p = autonomy.save_policy({"enabled": args.action == "enable"})
+        if args.action == "enable":
+            print("⚠ Autonomous trading ENABLED. Unattended runs may now place real "
+                  "orders without a human approving each one, bounded by:")
+            print(f"    ${p['per_trade_max_usd']:,.2f} per trade, "
+                  f"{p['max_trades_per_day']} trades/day, "
+                  f"defined-risk only: {p['defined_risk_only']}")
+            print("  Disable any time with: python -m app autonomy disable")
+        else:
+            print("Autonomous trading DISABLED. Unattended runs may analyze and log, "
+                  "but not place orders.")
+        return 0
+
+    if args.action == "set":
+        if not args.key:
+            print("error: set requires --key and --value", file=sys.stderr)
+            return 2
+        try:
+            p = autonomy.save_policy({args.key: args.value})
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(f"{args.key} = {p[args.key]}")
+        return 0
+
+    if args.action == "check":
+        order = _payload_from(args.payload)
+        if not isinstance(order, dict):
+            print("error: check requires --payload with a JSON object describing the order",
+                  file=sys.stderr)
+            return 2
+        verdict = autonomy.check_order(order)
+
+        def human(v):
+            print("ALLOWED" if v["allowed"] else "DENIED")
+            for r in v["reasons"]:
+                print(f"  ✖ {r}")
+            for w in v["warnings"]:
+                print(f"  ⚠ {w}")
+            print(f"  worst case: {v['worst_case_usd']}  risk: {v['risk_kind']}  "
+                  f"trades today: {v['trades_today']}")
+
+        _out(verdict, args.json, human)
+        return 0 if verdict["allowed"] else 1
+
+    print(f"error: unknown autonomy action {args.action!r}", file=sys.stderr)
+    return 2
+
+
 def cmd_export(args) -> int:
     dump = json.dumps(tracking.export_all(), indent=2, default=str)
     if args.out:
@@ -335,6 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m app",
         description="Trading agent console: signals in, decisions recorded, outcomes graded.")
     p.add_argument("--db", help="override the SQLite path (default: journal.db in repo root)")
+    p.add_argument("--policy-file", help="override the autonomy policy path (default: autonomy.json)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def jflag(sp):
@@ -411,6 +481,14 @@ def build_parser() -> argparse.ArgumentParser:
     jflag(sp)
     sp.set_defaults(fn=cmd_decisions)
 
+    sp = sub.add_parser("autonomy", help="unattended-trading policy: status/enable/disable/set/check")
+    sp.add_argument("action", choices=["status", "enable", "disable", "set", "check"])
+    sp.add_argument("--key", help="policy key for `set`")
+    sp.add_argument("--value", help="new value for `set`")
+    sp.add_argument("--payload", help="order JSON for `check` (inline, @file, or '-')")
+    jflag(sp)
+    sp.set_defaults(fn=cmd_autonomy)
+
     sp = sub.add_parser("export", help="dump all tracking data as JSON (backup)")
     sp.add_argument("--out", help="write to a file instead of stdout")
     sp.set_defaults(fn=cmd_export)
@@ -422,6 +500,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.db:
         tracking.DB_PATH = Path(args.db).expanduser()
+    if getattr(args, "policy_file", None):
+        autonomy.POLICY_PATH = Path(args.policy_file).expanduser()
     tracking.init()
     try:
         return args.fn(args)
