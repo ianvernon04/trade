@@ -553,6 +553,29 @@ function renderTown(t) {
           ${aMood === "neutral" ? "mixed" : aMood} tone` : "asleep"}</text>
     </g>`;
 
+  const agentHouse = (x, num, agentName, symbol) => {
+    // Smaller houses for agents 3, 4, 5. Each is ~100px wide.
+    const colors = {
+      3: { roof: "#6b4a40", wall: "#c9a5b8", trim: "#8b5a6b" },
+      4: { roof: "#3f4c5c", wall: "#a5b8cd", trim: "#5a6a7b" },
+      5: { roof: "#4a5c3f", wall: "#b8cda5", trim: "#6a7b5a" }
+    };
+    const c = colors[num] || colors[3];
+    return `
+      <g class="house house-agent-${num}" role="button" tabindex="0">
+        <title>${agentName}</title>
+        <polygon points="${x},120 ${x + 50},60 ${x + 100},120" fill="${c.roof}"/>
+        <rect x="${x}" y="120" width="100" height="90" fill="${c.wall}"/>
+        <rect x="${x + 18}" y="135" width="25" height="30" fill="${night ? "#141b26" : "#2a3442}"/>
+        <rect x="${x + 57}" y="135" width="25" height="30" fill="${night ? "#141b26" : "#2a3442}"/>
+        <rect x="${x + 20}" y="175" width="60" height="20" fill="#5c4033"/>
+        <circle cx="${x + 50}" cy="137" r="3" fill="#c9a86a"/>
+        <rect x="${x - 8}" y="210" width="116" height="25" rx="4" fill="${c.trim}"/>
+        <text x="${x + 50}" y="222" class="town-label" text-anchor="middle" font-size="13">${symbol}</text>
+        <text x="${x + 50}" y="234" class="town-sub" text-anchor="middle" font-size="10">Agent №${num}</text>
+      </g>`;
+  };
+
   const vacantLot = (x, num) => `
     <g class="lot">
       <title>Reserved for your next agent</title>
@@ -585,7 +608,9 @@ function renderTown(t) {
       ${lamp(348)} ${lamp(668)}
       ${traderHouse(80)}
       ${analystHouse(400)}
-      ${vacantLot(724, 3)}
+      ${agentHouse(520, 3, "Position Manager — monitors open positions", "📍")}
+      ${agentHouse(630, 4, "Risk Manager — aggregates portfolio Greeks", "⚖")}
+      ${agentHouse(740, 5, "Pattern Engine — learns from decision history", "🧠")}
     </svg>`;
 
   const wire = (sel, tab) => {
