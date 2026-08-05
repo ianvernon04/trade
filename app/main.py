@@ -21,7 +21,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (alerts, backtest, calendar_events, data, journal, news, newsagent,
-               options, positions, scanner, scorecard, tracking)
+               options, patternagent, positionagent, positions, riskagent, scanner,
+               scorecard, tracking)
 from .signals import score_frame, score_series
 
 
@@ -43,6 +44,9 @@ journal.init()
 tracking.init()
 alerts.start_background_thread()
 newsagent.start_background_thread()
+positionagent.start_background_thread()
+riskagent.start_background_thread()
+patternagent.start_background_thread()
 
 # Optional shared password for hosted/shared deployments. When APP_PASSWORD is
 # set, every request must carry HTTP Basic auth with that password (any
