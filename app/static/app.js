@@ -608,9 +608,9 @@ function renderTown(t) {
       ${lamp(348)} ${lamp(668)}
       ${traderHouse(80)}
       ${analystHouse(400)}
-      ${agentHouse(520, 3, "Position Manager — monitors open positions", "📍")}
-      ${agentHouse(630, 4, "Risk Manager — aggregates portfolio Greeks", "⚖")}
-      ${agentHouse(740, 5, "Pattern Engine — learns from decision history", "🧠")}
+      ${agentHouse(500, 3, "Position Manager — monitors open positions", "📍")}
+      ${agentHouse(650, 4, "Risk Manager — aggregates portfolio Greeks", "⚖")}
+      ${agentHouse(800, 5, "Pattern Engine — learns from decision history", "🧠")}
     </svg>`;
 
   const wire = (sel, tab) => {
