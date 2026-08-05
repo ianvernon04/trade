@@ -7,3 +7,5 @@ venv/
 autotrade.log
 cron-stderr.log
 .autotrade.lock/
+launchd-stdout.log
+launchd-stderr.log
