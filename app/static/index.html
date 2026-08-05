@@ -17,6 +17,7 @@
   <div class="brand">⚡ Options Trading Assistant</div>
   <nav id="tabs">
     <button data-tab="dashboard" class="active">Dashboard</button>
+    <button data-tab="town">Neighborhood</button>
     <button data-tab="agent">Agent</button>
     <button data-tab="scanner">Scanner</button>
     <button data-tab="analyze">Analyze</button>
@@ -45,6 +46,20 @@
     </table></div>
     <div class="section-head"><h2>Agent brief</h2><span class="muted">click a watchlist row, or use the search box</span></div>
     <div id="agent-brief" class="card"><p class="muted">Select a ticker to generate a full trading brief (signal + options read + backtest + news).</p></div>
+  </section>
+
+  <!-- NEIGHBORHOOD (where the agents live) -->
+  <section id="tab-town" class="tab">
+    <div class="section-head"><h2>Agent Row — the neighborhood</h2>
+      <span class="muted" id="town-updated"></span></div>
+    <div class="card town-card">
+      <div id="town-scene"><p class="muted spin">Driving into the neighborhood…</p></div>
+    </div>
+    <p class="muted">One house per agent. The Trader lives at №1 — its windows light up when it's
+    awake, the porch light follows its stance (green bullish, red bearish, blue watching), the
+    mailbox flag goes up when it's been active today, and the plaque keeps its career hit rate.
+    Click its house to step inside. The other lots are reserved: when you build your next agent,
+    it moves in here.</p>
   </section>
 
   <!-- AGENT (the visible body of the Claude + Robinhood MCP agent) -->
