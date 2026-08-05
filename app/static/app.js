@@ -140,8 +140,21 @@ function authHeaders() {
   return t ? { "X-Auth-Token": t } : {};
 }
 
-async function api(path) {
-  const r = await fetch(path, { headers: authHeaders() });
+async function api(path, timeoutMs = 45000) {
+  // Explicit timeout: without it a slow upstream (Yahoo throttling) leaves
+  // Safari hanging until it gives up with an unhelpful bare "Load failed".
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let r;
+  try {
+    r = await fetch(path, { headers: authHeaders(), signal: ctrl.signal });
+  } catch (e) {
+    throw new Error(e.name === "AbortError"
+      ? "server is responding slowly (market data source may be rate-limiting) — retrying on the next auto-refresh"
+      : "can't reach the app server — is it running? (start it with ./run.sh in the trade folder)");
+  } finally {
+    clearTimeout(timer);
+  }
   if (!r.ok) {
     let msg = r.statusText;
     try { msg = (await r.json()).detail || msg; } catch {}
@@ -168,6 +181,7 @@ function activeTab() {
 
 function loadTab(name) {
   if (name === "dashboard") loadWatchlist();
+  if (name === "town") loadTown();
   if (name === "agent") loadAgentBody();
   if (name === "scanner") loadScanner();
   if (name === "analyze") loadAnalysis();
@@ -312,17 +326,23 @@ async function loadAgentBody() {
   }
 }
 
-function renderAgentBody(s, events, decisions) {
-  const tr = s.track_record || {};
+function agentState(s, decisions) {
+  // Shared brain-state: the Agent tab's face and the Neighborhood's house
+  // must always agree on whether the agent is awake and which way it leans.
   const lastTs = (s.events && s.events.last_ts) || (decisions[0] && decisions[0].ts) || null;
   const hoursSince = lastTs ? (Date.now() - new Date(lastTs).getTime()) / 3600000 : Infinity;
   const lastDir = decisions.find(d =>
     DIRECTIONAL_UP.includes(d.action) || DIRECTIONAL_DOWN.includes(d.action));
   const dirFresh = lastDir && (Date.now() - new Date(lastDir.ts).getTime()) < 3 * 86400000;
-
   let mood = "neutral";
   if (hoursSince > 24) mood = "asleep";
   else if (dirFresh) mood = DIRECTIONAL_UP.includes(lastDir.action) ? "bullish" : "bearish";
+  return { mood, lastTs, lastDir };
+}
+
+function renderAgentBody(s, events, decisions) {
+  const tr = s.track_record || {};
+  const { mood, lastTs, lastDir } = agentState(s, decisions);
 
   $("#agent-svg").setAttribute("class", "mood-" + mood);
   $("#agent-mouth").setAttribute("d", MOUTHS[mood]);
@@ -385,6 +405,148 @@ function renderAgentBody(s, events, decisions) {
       <td>${d.score !== null && d.score !== undefined ? (d.score >= 0 ? "+" : "") + d.score : "–"}</td>
       <td>${outcome}</td></tr>`;
   }).join("") : `<tr><td colspan="6" class="muted">No calls recorded yet — ask the agent to analyze a ticker.</td></tr>`;
+}
+
+/* ---------------- neighborhood (where the agents live) ---------------- */
+/* One house per agent. The Trader's house renders its live state via the
+   same agentState() the Agent tab uses; vacant lots are reserved for future
+   agents — when one exists, give it a house here and a data source. Sky
+   follows the viewer's local clock (override with ?hour=22 to preview). */
+
+const MOOD_COLOR = () => ({ bullish: COLORS.good, bearish: COLORS.crit,
+  neutral: COLORS.s1, asleep: "#8a8a80" });
+
+const STARS = [[60, 40], [140, 88], [230, 30], [320, 66], [430, 24], [510, 90],
+  [590, 44], [680, 20], [760, 74], [840, 36], [910, 96], [970, 50],
+  [180, 130], [400, 120], [700, 118], [880, 140]];
+
+async function loadTown() {
+  try {
+    const [s, today, dec] = await Promise.all([
+      api("/api/tracking/summary"),
+      api("/api/tracking/summary?days=1"),
+      api("/api/tracking/decisions?limit=30"),
+    ]);
+    renderTown(s, today, dec.decisions);
+    $("#town-updated").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    $("#town-scene").innerHTML = `<p class="err">${e.message}</p>`;
+  }
+}
+
+function renderTown(s, today, decisions) {
+  const st = agentState(s, decisions);
+  const tr = s.track_record || {};
+  const moodColor = MOOD_COLOR()[st.mood];
+  const awake = st.mood !== "asleep";
+  const eventsToday = (today.events && today.events.total) || 0;
+  const hourParam = new URLSearchParams(location.search).get("hour");
+  const hour = hourParam !== null ? parseInt(hourParam, 10) : new Date().getHours();
+  const night = !(hour >= 7 && hour < 19);
+
+  const sky = night ? ["#0b1026", "#1c2547"] : ["#7db3dc", "#cfe8f6"];
+  const grass = night ? "#1f3320" : "#3a5f38";
+  const road = night ? "#20201f" : "#3a3a38";
+  const walk = night ? "#3c3c38" : "#8d8d85";
+  const wall = night ? "#8d8172" : "#cdbb9f";
+  const roof = night ? "#4e332e" : "#7a4a42";
+  const trim = night ? "#3b3f45" : "#575d66";
+  const winLit = "#ffd98a", winDark = night ? "#141b26" : "#2a3442";
+
+  const celestial = night
+    ? `<circle cx="850" cy="70" r="30" fill="#e8e6d8"/>
+       <circle cx="840" cy="62" r="6" fill="#cdcaba"/><circle cx="862" cy="80" r="4" fill="#cdcaba"/>
+       ${STARS.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.6" fill="#e9edf5" class="star"/>`).join("")}`
+    : `<circle cx="850" cy="70" r="34" fill="#ffd76a"/>
+       <circle cx="850" cy="70" r="46" fill="#ffd76a" opacity="0.25"/>`;
+
+  const lamp = (x) => `
+    <g>
+      <rect x="${x}" y="230" width="6" height="120" fill="${trim}"/>
+      <rect x="${x - 10}" y="222" width="26" height="10" rx="5" fill="${trim}"/>
+      <circle cx="${x + 3}" cy="238" r="7" fill="#ffd98a" opacity="${night ? 0.95 : 0.15}" class="lamp"/>
+      ${night ? `<circle cx="${x + 3}" cy="238" r="16" fill="#ffd98a" opacity="0.18"/>` : ""}
+    </g>`;
+
+  const win = (x, y, lit) => `
+    <g>
+      <rect x="${x}" y="${y}" width="54" height="46" fill="${lit ? winLit : winDark}"
+        stroke="${trim}" stroke-width="3" class="${lit ? "win-lit" : ""}"/>
+      <line x1="${x + 27}" y1="${y}" x2="${x + 27}" y2="${y + 46}" stroke="${trim}" stroke-width="2"/>
+      <line x1="${x}" y1="${y + 23}" x2="${x + 54}" y2="${y + 23}" stroke="${trim}" stroke-width="2"/>
+    </g>`;
+
+  const traderHouse = (x) => `
+    <g class="house house-trader" role="button" tabindex="0">
+      <title>The Trader — click to step inside</title>
+      <rect x="${x + 176}" y="66" width="24" height="60" fill="#6b4a40"/>
+      ${awake ? `<circle cx="${x + 188}" cy="52" r="7" class="smoke s1"/>
+                 <circle cx="${x + 188}" cy="40" r="9" class="smoke s2"/>
+                 <circle cx="${x + 188}" cy="26" r="11" class="smoke s3"/>` : ""}
+      <polygon points="${x - 14},132 ${x + 122},52 ${x + 258},132" fill="${roof}"/>
+      <rect x="${x}" y="132" width="244" height="172" fill="${wall}"/>
+      <rect x="${x + 100}" y="224" width="46" height="80" fill="#57422f"/>
+      <circle cx="${x + 138}" cy="266" r="4" fill="#c9a86a"/>
+      <circle cx="${x + 123}" cy="206" r="8" fill="${moodColor}" class="porch"/>
+      ${win(x + 24, 160, awake)}
+      ${win(x + 168, 160, awake)}
+      ${awake
+        ? `<circle cx="${x + 51}" cy="186" r="13" fill="#cfd6d2"/>
+           <circle cx="${x + 45}" cy="184" r="3" fill="${moodColor}"/>
+           <circle cx="${x + 57}" cy="184" r="3" fill="${moodColor}"/>`
+        : `<text x="${x + 200}" y="150" class="town-zzz">z</text>
+           <text x="${x + 216}" y="136" class="town-zzz z2">z</text>`}
+      <rect x="${x - 44}" y="252" width="6" height="52" fill="${trim}"/>
+      <rect x="${x - 62}" y="238" width="44" height="26" rx="5" fill="${trim}"/>
+      ${eventsToday ? `<polygon points="${x - 62},242 ${x - 62},224 ${x - 50},233" fill="${COLORS.crit}"/>
+        <text x="${x - 40}" y="256" font-size="15" font-weight="700" fill="#ffd98a"
+          text-anchor="middle">${eventsToday > 99 ? "99" : eventsToday}</text>` : ""}
+      <rect x="${x + 74}" y="312" width="96" height="30" rx="5" fill="${trim}"/>
+      <text x="${x + 122}" y="326" class="town-label" text-anchor="middle">THE TRADER · №1</text>
+      <text x="${x + 122}" y="338" class="town-sub" text-anchor="middle">
+        ${tr.hit_rate !== null && tr.hit_rate !== undefined ? tr.hit_rate + "% career" : "unproven"} ·
+        ${st.mood}</text>
+    </g>`;
+
+  const vacantLot = (x, num) => `
+    <g class="lot">
+      <title>Reserved for your next agent</title>
+      ${[0, 1, 2, 3, 4, 5, 6, 7].map(i =>
+        `<rect x="${x + i * 26}" y="256" width="10" height="42" rx="2" fill="${trim}" opacity="0.75"/>`).join("")}
+      <rect x="${x - 4}" y="266" width="216" height="6" fill="${trim}" opacity="0.75"/>
+      <circle cx="${x + 34}" cy="296" r="15" fill="${grass}" stroke="${night ? "#2c452c" : "#4d7a49"}" stroke-width="3"/>
+      <circle cx="${x + 180}" cy="298" r="12" fill="${grass}" stroke="${night ? "#2c452c" : "#4d7a49"}" stroke-width="3"/>
+      <rect x="${x + 86}" y="206" width="8" height="94" fill="#6d5a41"/>
+      <rect x="${x + 28}" y="182" width="156" height="46" rx="6" fill="#e8dcc2" stroke="#6d5a41" stroke-width="3"/>
+      <text x="${x + 106}" y="202" font-size="15" font-weight="800" fill="#5d4633" text-anchor="middle">RESERVED</text>
+      <text x="${x + 106}" y="219" font-size="11" fill="#7a6a50" text-anchor="middle">for agent №${num}</text>
+    </g>`;
+
+  $("#town-scene").innerHTML = `
+    <svg viewBox="0 0 1000 400" role="img" aria-label="Agent neighborhood"
+      style="width:100%;height:auto;display:block;border-radius:8px">
+      <defs>
+        <linearGradient id="skyG" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="${sky[0]}"/><stop offset="1" stop-color="${sky[1]}"/>
+        </linearGradient>
+      </defs>
+      <rect width="1000" height="316" fill="url(#skyG)"/>
+      ${celestial}
+      <rect y="300" width="1000" height="44" fill="${grass}"/>
+      <rect y="344" width="1000" height="14" fill="${walk}"/>
+      <rect y="358" width="1000" height="42" fill="${road}"/>
+      ${[40, 180, 320, 460, 600, 740, 880].map(x =>
+        `<rect x="${x}" y="377" width="56" height="5" rx="2.5" fill="#c9c245" opacity="0.8"/>`).join("")}
+      ${lamp(348)} ${lamp(668)}
+      ${traderHouse(96)}
+      ${vacantLot(420, 2)}
+      ${vacantLot(724, 3)}
+    </svg>`;
+
+  const h = $("#town-scene .house-trader");
+  h.style.cursor = "pointer";
+  h.addEventListener("click", () => switchTab("agent"));
+  h.addEventListener("keydown", (e) => { if (e.key === "Enter") switchTab("agent"); });
 }
 
 /* ---------------- scanner + calendar + alerts ---------------- */
@@ -846,6 +1008,7 @@ $("#j-logout").addEventListener("click", async () => {
 setInterval(() => {
   const tab = activeTab();
   if (tab === "dashboard") loadWatchlist();
+  else if (tab === "town") loadTown();
   else if (tab === "agent") loadAgentBody();
   else if (tab === "analyze") loadAnalysis();
   else if (tab === "options") loadOptions($("#op-expiry").value || undefined);
