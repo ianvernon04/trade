@@ -17,8 +17,8 @@ every action and every call you make so the system can grade itself.
 - `app/journal.py` — the human's manual UI journal (per-user, auth'd)
 - `app/tracking.py` — **the agent's memory**: every event, decision, and graded
   outcome (tables `agent_events` / `agent_decisions` in `journal.db`)
-- `app/agent_cli.py` — your console: `python -m app <command>`
-- `tests/` — `python -m unittest discover -s tests`
+- `app/agent_cli.py` — your console: `python3 -m app <command>`
+- `tests/` — `python3 -m unittest discover -s tests`
 
 ## Robinhood MCP server
 
@@ -34,22 +34,22 @@ state.
 The value of this system compounds only if the dataset is complete. Follow
 these rules in every session:
 
-1. **Start of session:** `python -m app evaluate` (grade matured calls), then
-   `python -m app report` — know the track record before making new calls.
-2. **Before any recommendation or trade:** `python -m app analyze TICKER`
+1. **Start of session:** `python3 -m app evaluate` (grade matured calls), then
+   `python3 -m app report` — know the track record before making new calls.
+2. **Before any recommendation or trade:** `python3 -m app analyze TICKER`
    (add `--options --weekly` for conviction checks). This records the
    decision with its full signal snapshot automatically. Use
    `--no-record` only for idle exploration.
 3. **Every state-changing broker action** (order placed / modified /
    cancelled via MCP) must be logged the moment the tool returns:
-   `python -m app log order --ticker X --source robinhood-mcp --payload '<tool result JSON>'`
+   `python3 -m app log order --ticker X --source robinhood-mcp --payload '<tool result JSON>'`
 4. **Bulk MCP data** (orders, fills, positions, portfolio) goes through
-   `python -m app ingest --payload '-'` (pipe the tool result via stdin) —
+   `python3 -m app ingest --payload '-'` (pipe the tool result via stdin) —
    it normalizes recognizable shapes and always preserves the raw payload.
 5. **Link executions to reasoning:** when an order fills, record or update the
    decision with `--order-id` so fills trace back to the signal that caused them.
 6. **Never invent data.** Log only what tools actually returned. If a call
-   failed, that's an event too (`python -m app log note --note "..."`).
+   failed, that's an event too (`python3 -m app log note --note "..."`).
 7. **Manual trades the user mentions** belong in the tracking store as well
    (`decide` + `log`), so the dataset covers everything, not just agent acts.
 
@@ -88,7 +88,7 @@ unrequested friction either.
   macro events (`/api/calendar`) — surface these before any options trade.
 - **Log the proposal, not just the fill.** The moment you state a ticket —
   before calling the order tool — record it:
-  `python -m app log proposal --ticker X --note "<the exact ticket stated>"`.
+  `python3 -m app log proposal --ticker X --note "<the exact ticket stated>"`.
   That's the durable proof of what was actually proposed and approved,
   independent of chat scrollback. Log the resulting order/fill as required
   below once the tool returns, and link them with `--order-id` where possible.
@@ -113,12 +113,12 @@ above instead; autonomous mode is the exception, not the default.
 
 ### The routine
 
-1. `python -m app evaluate` then `python -m app report --days 30`.
+1. `python3 -m app evaluate` then `python3 -m app report --days 30`.
    **Circuit breaker:** if the last 30 days have 5+ graded decisions and a
    hit rate under 40%, stop — log a note explaining why and place no trades
    this run. A cold streak is exactly when autonomous size should shrink to
    zero, not when it should keep firing.
-2. `python -m app scan` (or `GET /api/scan` if the server's up) to rank
+2. `python3 -m app scan` (or `GET /api/scan` if the server's up) to rank
    today's setups.
 3. **Entry-quality bar** — a setup may be considered only if *all* hold:
    - `crossed_buy` or `crossed_sell` is true (a fresh threshold cross, not
@@ -131,7 +131,7 @@ above instead; autonomous mode is the exception, not the default.
 4. **Risk gate — run it on every order, no exceptions:**
 
    ```
-   python -m app autonomy check --payload '{"ticker":"NVDA","strategy":"long_call",
+   python3 -m app autonomy check --payload '{"ticker":"NVDA","strategy":"long_call",
      "side":"buy","quantity":2,"strike":185,"expiry":"2026-09-18",
      "limit_price":1.20,"est_cost":240,"max_loss":240}'
    ```
@@ -142,7 +142,7 @@ above instead; autonomous mode is the exception, not the default.
    standing instruction, not something to negotiate with.
 
 5. For an order that clears both the entry bar and the gate: log the
-   proposal (`python -m app log proposal ...`) with the exact contract
+   proposal (`python3 -m app log proposal ...`) with the exact contract
    *before* calling the order tool, place it, then immediately record it so
    it counts toward the daily cap and lands in the audit trail:
 
@@ -158,10 +158,10 @@ above instead; autonomous mode is the exception, not the default.
 
 ### What the gate enforces
 
-Inspect or change any of it with `python -m app autonomy status` / `set`:
+Inspect or change any of it with `python3 -m app autonomy status` / `set`:
 
 - **Kill switch** — off by default; nothing autonomous trades until the owner
-  runs `python -m app autonomy enable`.
+  runs `python3 -m app autonomy enable`.
 - **Per-trade cap** ($300) measured on *max loss*, not cost, so a credit
   spread is judged by what it can actually lose.
 - **Daily trade cap** (1) counting only `source='autonomous'` orders, so
@@ -182,7 +182,7 @@ Inspect or change any of it with `python -m app autonomy status` / `set`:
 
 These thresholds are defaults chosen because the owner declined to specify
 them when asked — deliberately conservative *because* nobody's watching.
-Change them via `python -m app autonomy set`, not by editing prose.
+Change them via `python3 -m app autonomy set`, not by editing prose.
 
 ### Scheduling it
 
@@ -213,26 +213,26 @@ On you to confirm before trusting it with real money:
 - **The gate cannot physically intercept an MCP call** — the broker tools
   are directly reachable. It is a mandatory protocol step with a
   deterministic, tested implementation and an audit trail, not a sandbox.
-  The kill switch (`python -m app autonomy disable`) and Robinhood's own
+  The kill switch (`python3 -m app autonomy disable`) and Robinhood's own
   account controls are the hard stops.
 
 ## CLI reference
 
 ```
-python -m app analyze NVDA [--options] [--weekly] [--horizon 10] [--json]
-python -m app decide --ticker NVDA --action call --price 181.2 --rationale "..." [--snapshot]
-python -m app log proposal --ticker NVDA --note "<exact order ticket stated in chat>"
-python -m app log order --ticker NVDA --source robinhood-mcp --payload '{...}' | @file | -
-python -m app ingest --payload - [--kind positions] [--source robinhood-mcp]
-python -m app scan [--tickers AAPL,MSFT,...] [--json]  # rank today's setups (autonomous mode)
-python -m app evaluate [--period 1y]        # grade matured decisions
-python -m app report [--days 30]            # activity + track record
-python -m app events / decisions [--pending] [--json]
-python -m app export --out backup.json      # journal.db is gitignored — this is the backup
-python -m app autonomy status               # unattended-trading policy + today's usage
-python -m app autonomy enable | disable     # the kill switch
-python -m app autonomy set --key per_trade_max_usd --value 300
-python -m app autonomy check --payload '{...}'   # exit 0 = allowed, 1 = denied
+python3 -m app analyze NVDA [--options] [--weekly] [--horizon 10] [--json]
+python3 -m app decide --ticker NVDA --action call --price 181.2 --rationale "..." [--snapshot]
+python3 -m app log proposal --ticker NVDA --note "<exact order ticket stated in chat>"
+python3 -m app log order --ticker NVDA --source robinhood-mcp --payload '{...}' | @file | -
+python3 -m app ingest --payload - [--kind positions] [--source robinhood-mcp]
+python3 -m app scan [--tickers AAPL,MSFT,...] [--json]  # rank today's setups (autonomous mode)
+python3 -m app evaluate [--period 1y]        # grade matured decisions
+python3 -m app report [--days 30]            # activity + track record
+python3 -m app events / decisions [--pending] [--json]
+python3 -m app export --out backup.json      # journal.db is gitignored — this is the backup
+python3 -m app autonomy status               # unattended-trading policy + today's usage
+python3 -m app autonomy enable | disable     # the kill switch
+python3 -m app autonomy set --key per_trade_max_usd --value 300
+python3 -m app autonomy check --payload '{...}'   # exit 0 = allowed, 1 = denied
 ```
 
 Actions: `buy sell call put hold no_trade`. Decisions are graded on the
@@ -246,8 +246,13 @@ When the web server is running, the same store is reachable at
 
 - Run: `./run.sh` or `uvicorn app.main:app --port 8000` (deps:
   `pip install -r requirements.txt`, Python 3.10+)
-- Tests: `python -m unittest discover -s tests` — keep them green; new
+- Tests: `python3 -m unittest discover -s tests` — keep them green; new
   tracking logic needs tests (stdlib-only, inject prices, no network).
 - `journal.db` (journal + tracking tables) is local state, never committed.
+- **Commands say `python3`, not `python`, on purpose.** The owner's machine
+  has no bare `python` on PATH. Unattended runs allowlist the exact command
+  string, so a bare `python` example is not a cosmetic difference — it is a
+  denied tool call in a run nobody is watching. Two scheduled runs misread
+  this as a broken environment before it was fixed.
 - Style: match the existing modules — module docstring explaining *why*,
   `from __future__ import annotations`, guarded degradation over hard failure.
