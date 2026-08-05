@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 journal.db
+autonomy.json
 .venv/
 venv/
 autotrade.log
