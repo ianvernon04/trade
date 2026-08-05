@@ -17,6 +17,7 @@
   <div class="brand">⚡ Options Trading Assistant</div>
   <nav id="tabs">
     <button data-tab="dashboard" class="active">Dashboard</button>
+    <button data-tab="agent">Agent</button>
     <button data-tab="scanner">Scanner</button>
     <button data-tab="analyze">Analyze</button>
     <button data-tab="options">Options</button>
@@ -44,6 +45,59 @@
     </table></div>
     <div class="section-head"><h2>Agent brief</h2><span class="muted">click a watchlist row, or use the search box</span></div>
     <div id="agent-brief" class="card"><p class="muted">Select a ticker to generate a full trading brief (signal + options read + backtest + news).</p></div>
+  </section>
+
+  <!-- AGENT (the visible body of the Claude + Robinhood MCP agent) -->
+  <section id="tab-agent" class="tab">
+    <div class="section-head"><h2>Agent — its body, its diary, its report card</h2>
+      <span class="muted" id="ag-updated"></span></div>
+
+    <div class="card agent-hero">
+      <div class="agent-figure">
+        <svg id="agent-svg" class="mood-asleep" viewBox="0 0 200 200" role="img" aria-label="Agent avatar">
+          <line class="a-antenna" x1="100" y1="40" x2="100" y2="20"/>
+          <circle class="a-dot" cx="100" cy="15" r="6"/>
+          <rect class="a-ear" x="22" y="82" width="12" height="28" rx="6"/>
+          <rect class="a-ear" x="166" y="82" width="12" height="28" rx="6"/>
+          <rect class="a-head" x="34" y="40" width="132" height="112" rx="26"/>
+          <rect class="a-screen" x="50" y="57" width="100" height="78" rx="14"/>
+          <g class="a-eyes">
+            <circle class="a-eye" cx="78" cy="88" r="9"/>
+            <circle class="a-eye" cx="122" cy="88" r="9"/>
+          </g>
+          <g class="a-eyes-closed">
+            <path d="M69 88 q9 8 18 0"/>
+            <path d="M113 88 q9 8 18 0"/>
+          </g>
+          <path id="agent-mouth" class="a-mouth" d="M92 116 q8 5 16 0"/>
+          <text class="a-zzz" x="148" y="44">z</text>
+          <text class="a-zzz z2" x="160" y="30">z</text>
+        </svg>
+      </div>
+      <div class="agent-bubble">
+        <div id="ag-headline" class="ag-headline">Waking up…</div>
+        <div id="ag-sub" class="muted"></div>
+        <div id="ag-pills" class="ag-pills"></div>
+      </div>
+    </div>
+
+    <div id="ag-tiles" class="tiles"></div>
+
+    <div class="grid2">
+      <div class="card"><h3>What it's been doing — live diary</h3>
+        <div id="ag-feed"><p class="muted">Loading…</p></div></div>
+      <div class="card"><h3>Its calls — and how they aged</h3>
+        <div class="scroll"><table id="ag-decisions">
+          <thead><tr><th>When</th><th>Ticker</th><th>Call</th><th>Price</th><th>Score</th><th>Outcome</th></tr></thead>
+          <tbody></tbody>
+        </table></div></div>
+    </div>
+
+    <p class="muted">This is the same brain you talk to in Claude Code (<code>claude</code> in the repo
+    folder, wired to Robinhood via MCP). Every analysis, recommendation, and broker action it takes is
+    recorded, then graded against what the market actually did — its mood follows its latest stance,
+    and the report card is real. Directional calls are graded on the forward move over each decision's
+    horizon (default 10 trading days).</p>
   </section>
 
   <!-- SCANNER -->

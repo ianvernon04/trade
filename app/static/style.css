@@ -145,9 +145,62 @@ ul.reasons li { margin: 3px 0; }
 .learn p b { color: var(--ink); }
 #learn-videos a { color: var(--series-1); }
 
+/* ---------- agent body ---------- */
+.agent-hero { display: flex; gap: 24px; align-items: center; }
+.agent-figure { flex: none; width: 170px; }
+#agent-svg { width: 100%; height: auto; display: block; animation: ag-breathe 4s ease-in-out infinite; }
+.a-head { fill: var(--surface-2); stroke: var(--border); stroke-width: 1.5; }
+.a-screen { fill: var(--page); stroke: var(--border); }
+.a-ear { fill: var(--surface-2); stroke: var(--border); }
+.a-antenna { stroke: var(--muted); stroke-width: 3.5; stroke-linecap: round; }
+.a-dot { fill: var(--series-1); animation: ag-pulse 2.4s ease-in-out infinite; }
+.a-eye { fill: var(--series-1); transform-box: fill-box; transform-origin: center; animation: ag-blink 5.2s infinite; }
+.a-eyes-closed { display: none; }
+.a-eyes-closed path { stroke: var(--muted); stroke-width: 3; fill: none; stroke-linecap: round; }
+.a-mouth { stroke: var(--series-1); stroke-width: 4; fill: none; stroke-linecap: round; }
+.a-zzz { display: none; fill: var(--muted); font: 700 17px system-ui, sans-serif; }
+.a-zzz.z2 { font-size: 12px; }
+.mood-bullish .a-eye, .mood-bullish .a-dot { fill: var(--good); }
+.mood-bullish .a-mouth { stroke: var(--good); }
+.mood-bearish .a-eye, .mood-bearish .a-dot { fill: var(--critical); }
+.mood-bearish .a-mouth { stroke: var(--critical); }
+.mood-asleep { animation-duration: 8s; }
+.mood-asleep .a-eyes { display: none; }
+.mood-asleep .a-eyes-closed { display: block; }
+.mood-asleep .a-dot { fill: var(--muted); animation: none; }
+.mood-asleep .a-mouth { stroke: var(--muted); }
+.mood-asleep .a-zzz { display: block; animation: ag-float 3.2s ease-in-out infinite; }
+.mood-asleep .a-zzz.z2 { animation-delay: 1.4s; }
+.agent-bubble {
+  flex: 1; min-width: 220px; position: relative;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 18px;
+}
+.agent-bubble::before {
+  content: ""; position: absolute; left: -9px; top: 36px;
+  border: 9px solid transparent; border-right-color: var(--surface-2); border-left: 0;
+}
+.ag-headline { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+.ag-pills { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.feed-note { color: var(--ink-2); overflow-wrap: anywhere; }
+@keyframes ag-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes ag-blink { 0%, 91%, 100% { transform: scaleY(1); } 94% { transform: scaleY(0.1); } }
+@keyframes ag-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes ag-float {
+  0% { transform: translateY(0); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateY(-12px); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #agent-svg, .a-eye, .a-dot, .mood-asleep .a-zzz { animation: none !important; }
+}
+
 /* ---------- mobile ---------- */
 .card { overflow-x: auto; }
 @media (max-width: 720px) {
+  .agent-hero { flex-direction: column; align-items: stretch; }
+  .agent-figure { width: 128px; margin: 0 auto; }
+  .agent-bubble::before { display: none; }
   header { padding: 8px 10px; gap: 8px; }
   .brand { font-size: 14px; }
   nav {
