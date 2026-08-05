@@ -7,3 +7,4 @@ venv/
 autotrade.log
 cron-stderr.log
 .autotrade.lock/
+server.log

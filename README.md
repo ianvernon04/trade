@@ -31,6 +31,20 @@ pip install -r requirements.txt
 uvicorn app.main:app --port 8000
 ```
 
+**Run it in the background (macOS)** — no terminal window to keep open:
+
+```bash
+./install-server.sh            # starts now, auto-starts at login, restarts on crash
+./install-server.sh --status   # is it running?
+./install-server.sh --logs     # watch the server log
+./install-server.sh --remove   # stop and uninstall
+```
+
+The dashboard is then always at http://127.0.0.1:8000 while the Mac is awake
+and you're logged in. (For a URL that works even when this computer is off —
+including from your phone — use the Render deployment below; note its free
+tier wipes `journal.db` on redeploys.)
+
 Requires Python 3.10+ and internet access (data comes from Yahoo Finance and
 public RSS feeds — no API keys needed).
 
