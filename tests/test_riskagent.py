@@ -87,6 +87,77 @@ class TestComposeMessages(unittest.TestCase):
         self.assertEqual(len(summary_msgs), 1)
 
 
+class TestUnpricedPositions(unittest.TestCase):
+    """A leg whose chain wouldn't load is exposure the totals don't contain.
+
+    Regression: aggregation used `p.get("delta_shares", 0)`, but enrichment
+    sets the key to None explicitly, so the default never fired and the sum
+    raised TypeError on any real portfolio with one failed chain fetch.
+    """
+
+    def test_missing_greeks_do_not_crash_aggregation(self):
+        a = riskagent.analyze_portfolio(
+            {"delta_shares": 50, "theta_per_day": None},
+            [{"ticker": "AAPL", "instrument": "stock", "delta_shares": 50,
+              "theta_per_day": 0.0, "quantity": 50},
+             {"ticker": "NVDA", "instrument": "call", "delta_shares": None,
+              "theta_per_day": None, "quantity": 2, "dte": 44}])
+        self.assertEqual(a["unpriced"], 1)
+
+    def test_unpriced_is_reported_as_an_issue(self):
+        a = riskagent.analyze_portfolio(
+            {"delta_shares": 50, "theta_per_day": 0},
+            [{"ticker": "AAPL", "delta_shares": 50, "theta_per_day": 0.0, "quantity": 50},
+             {"ticker": "NVDA", "delta_shares": None, "theta_per_day": None, "quantity": 2}])
+        issue = next(i for i in a["issues"] if i["type"] == "unpriced")
+        self.assertEqual(issue["tickers"], ["NVDA"])
+
+    def test_partly_priced_book_gets_no_low_risk_verdict(self):
+        a = riskagent.analyze_portfolio(
+            {"delta_shares": 10, "theta_per_day": 0},
+            [{"ticker": "AAPL", "delta_shares": 10, "theta_per_day": 0.0, "quantity": 10},
+             {"ticker": "NVDA", "delta_shares": None, "theta_per_day": None, "quantity": 1}])
+        self.assertEqual(a["risk_level"], "unknown")
+
+    def test_unpriced_alert_is_high_priority(self):
+        msgs = riskagent.compose_messages({
+            "blind": False, "net_delta": 50, "net_theta": 0, "gross_delta": 50,
+            "n_positions": 2, "risk_level": "unknown", "unpriced": 1,
+            "issues": [{"type": "unpriced", "n_unpriced": 1, "tickers": ["NVDA"],
+                        "note": "1 of 2 position(s) could not be priced."}]})
+        self.assertTrue(any(m["priority"] == "high" and "priced" in m["subject"].lower()
+                            for m in msgs))
+
+
+class TestBlindAndStale(unittest.TestCase):
+    """"Low risk" over a book the agent cannot see is the worst possible output."""
+
+    def test_blind_replaces_every_other_message(self):
+        msgs = riskagent.compose_messages(
+            {"blind": True, "net_delta": 0, "net_theta": 0, "gross_delta": 0,
+             "n_positions": 0, "risk_level": "low", "issues": []})
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(msgs[0]["priority"], "high")
+        self.assertIn("blind", msgs[0]["subject"].lower())
+
+    def test_blind_never_ships_a_low_risk_verdict(self):
+        msgs = riskagent.compose_messages(
+            {"blind": True, "net_delta": 0, "net_theta": 0, "gross_delta": 0,
+             "n_positions": 0, "risk_level": "low", "issues": []})
+        self.assertFalse(any("Portfolio Greeks" in m["subject"] for m in msgs))
+        self.assertFalse(any("low risk" in m["body"].lower() for m in msgs))
+
+    def test_stale_snapshot_alerts_alongside_the_numbers(self):
+        msgs = riskagent.compose_messages(
+            {"blind": False, "stale": True, "age_hours": 40.0,
+             "as_of": "2026-08-03T20:00:00Z", "net_delta": 500, "net_theta": -30,
+             "gross_delta": 500, "n_positions": 2, "risk_level": "medium",
+             "issues": []})
+        self.assertTrue(any(m["priority"] == "high" and "stale" in m["subject"].lower()
+                            for m in msgs))
+        self.assertTrue(any("Portfolio Greeks" in m["subject"] for m in msgs))
+
+
 class TestRunScan(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -98,11 +169,21 @@ class TestRunScan(unittest.TestCase):
         tracking.DB_PATH = self._old_db
         self._tmp.cleanup()
 
-    def test_scan_logs_event(self):
-        res = riskagent.run_scan(send=False)
+    def test_scan_logs_event_from_the_broker_book(self):
+        riskagent.run_scan(send=False, book={
+            "source": "robinhood-mcp", "blind": False, "stale": False,
+            "totals": {"delta_shares": 600, "theta_per_day": 2},
+            "positions": [p("NVDA", delta_shares=600)]})
         events = tracking.list_events(kind="risk_scan")
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["source"], "risk_manager")
+        self.assertEqual(events[0]["payload"]["source"], "robinhood-mcp")
+
+    def test_blind_scan_mails_a_high_priority_alert(self):
+        res = riskagent.run_scan(send=True, book={
+            "source": "none", "blind": True, "positions": [], "totals": {}})
+        self.assertTrue(any(m["priority"] == "high" for m in res["delivered"]))
+        self.assertTrue(res["analysis"]["blind"])
 
 
 if __name__ == "__main__":

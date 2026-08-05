@@ -459,8 +459,20 @@ def cmd_position_scan(args) -> int:
 
     def human(o):
         a = o["analysis"]
-        print(f"Scanned {a['n_positions']} open position(s), "
-              f"${a['theta_sum']:.0f}/day portfolio theta")
+        if a.get("blind"):
+            print("BLIND — no readable broker position data has been ingested.")
+            print("  This is not a flat book; the account is unknown. Pull positions")
+            print("  from the Robinhood MCP server, then:")
+            print("    python3 -m app ingest --payload -   (pipe the tool result)")
+            return
+        if a.get("stale"):
+            print(f"⚠ STALE — snapshot is {a['age_hours']}h old (as of {a['as_of']})")
+        theta = (f"${a['theta_sum']:.0f}/day portfolio theta"
+                 + (f" (excludes {a['unpriced']} unpriced)" if a.get("unpriced") else ""))
+        print(f"Scanned {a['n_positions']} open position(s) from {a.get('source')}, {theta}")
+        if a.get("unpriced"):
+            print(f"  ⚠ {a['unpriced']} position(s) had no live mark/greeks: "
+                  + ", ".join(a.get("unpriced_tickers") or []))
         print(f"Identified {len(a['actions'])} action(s):")
         for act in a["actions"]:
             print(f"  {act['ticker']:<6} {act.get('type', 'monitor')}: "
@@ -484,8 +496,17 @@ def cmd_risk_scan(args) -> int:
 
     def human(o):
         a = o["analysis"]
+        if a.get("blind"):
+            print("BLIND — cannot compute portfolio risk without broker positions.")
+            print("  No delta, theta, concentration or leverage read is possible.")
+            print("  Pull positions from the Robinhood MCP server, then:")
+            print("    python3 -m app ingest --payload -   (pipe the tool result)")
+            return
+        if a.get("stale"):
+            print(f"⚠ STALE — snapshot is {a['age_hours']}h old (as of {a['as_of']})")
         print(f"Portfolio: Δ{a['net_delta']:+.0f}, Θ${a['net_theta']:+.0f}/day, "
-              f"{a['n_positions']} position(s), {a['risk_level'].upper()} risk")
+              f"{a['n_positions']} position(s), {a['risk_level'].upper()} risk "
+              f"(from {a.get('source')})")
         if a["issues"]:
             print(f"Identified {len(a['issues'])} risk issue(s):")
             for issue in a["issues"]:
