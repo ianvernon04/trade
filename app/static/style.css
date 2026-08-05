@@ -199,7 +199,7 @@ ul.reasons li { margin: 3px 0; }
 .town-card { padding: 8px; }
 .town-label { font: 700 13px system-ui, sans-serif; fill: #e8e4d8; letter-spacing: 0.04em; }
 .town-sub { font: 11px system-ui, sans-serif; fill: #b9b4a6; }
-.house-trader:focus-visible { outline: 2px solid var(--series-1); }
+.house-trader:focus-visible, .house-analyst:focus-visible { outline: 2px solid var(--series-1); }
 .smoke { fill: #b9b4a6; opacity: 0; animation: town-smoke 3.6s ease-out infinite; }
 .smoke.s2 { animation-delay: 1.2s; }
 .smoke.s3 { animation-delay: 2.4s; }

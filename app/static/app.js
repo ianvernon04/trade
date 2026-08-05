@@ -422,24 +422,32 @@ const STARS = [[60, 40], [140, 88], [230, 30], [320, 66], [430, 24], [510, 90],
 
 async function loadTown() {
   try {
-    const [s, today, dec] = await Promise.all([
-      api("/api/tracking/summary"),
-      api("/api/tracking/summary?days=1"),
-      api("/api/tracking/decisions?limit=30"),
-    ]);
-    renderTown(s, today, dec.decisions);
+    renderTown(await api("/api/town/status"));
     $("#town-updated").textContent = "updated " + new Date().toLocaleTimeString();
   } catch (e) {
     $("#town-scene").innerHTML = `<p class="err">${e.message}</p>`;
   }
 }
 
-function renderTown(s, today, decisions) {
+function renderTown(t) {
+  const s = t.trader.summary, decisions = t.trader.decisions || [];
   const st = agentState(s, decisions);
   const tr = s.track_record || {};
   const moodColor = MOOD_COLOR()[st.mood];
   const awake = st.mood !== "asleep";
-  const eventsToday = (today.events && today.events.total) || 0;
+  const mailWaiting = t.trader.unread_mail || 0;
+
+  // The Analyst is awake if it scanned recently; its mood is the market's
+  // news tone from that scan.
+  const scan = t.analyst.last_scan;
+  const scanAgeH = scan ? (Date.now() - new Date(scan.ts).getTime()) / 3600000 : Infinity;
+  const aAwake = scanAgeH < 2;
+  const tone = aAwake && scan.payload && scan.payload.overall
+    ? scan.payload.overall.sentiment : null;
+  const aMood = !aAwake ? "asleep"
+    : tone === "bullish" ? "bullish" : tone === "bearish" ? "bearish" : "neutral";
+  const aColor = MOOD_COLOR()[aMood];
+  const sentToday = t.analyst.sent_today || 0;
   const hourParam = new URLSearchParams(location.search).get("hour");
   const hour = hourParam !== null ? parseInt(hourParam, 10) : new Date().getHours();
   const night = !(hour >= 7 && hour < 19);
@@ -450,6 +458,8 @@ function renderTown(s, today, decisions) {
   const walk = night ? "#3c3c38" : "#8d8d85";
   const wall = night ? "#8d8172" : "#cdbb9f";
   const roof = night ? "#4e332e" : "#7a4a42";
+  const wallB = night ? "#67788c" : "#a5bacd";
+  const roofB = night ? "#2f4256" : "#4a6a8a";
   const trim = night ? "#3b3f45" : "#575d66";
   const winLit = "#ffd98a", winDark = night ? "#141b26" : "#2a3442";
 
@@ -498,14 +508,49 @@ function renderTown(s, today, decisions) {
            <text x="${x + 216}" y="136" class="town-zzz z2">z</text>`}
       <rect x="${x - 44}" y="252" width="6" height="52" fill="${trim}"/>
       <rect x="${x - 62}" y="238" width="44" height="26" rx="5" fill="${trim}"/>
-      ${eventsToday ? `<polygon points="${x - 62},242 ${x - 62},224 ${x - 50},233" fill="${COLORS.crit}"/>
+      ${mailWaiting ? `<polygon points="${x - 62},242 ${x - 62},224 ${x - 50},233" fill="${COLORS.crit}"/>
         <text x="${x - 40}" y="256" font-size="15" font-weight="700" fill="#ffd98a"
-          text-anchor="middle">${eventsToday > 99 ? "99" : eventsToday}</text>` : ""}
+          text-anchor="middle">${mailWaiting > 99 ? "99" : mailWaiting}</text>` : ""}
       <rect x="${x + 74}" y="312" width="96" height="30" rx="5" fill="${trim}"/>
       <text x="${x + 122}" y="326" class="town-label" text-anchor="middle">THE TRADER · №1</text>
       <text x="${x + 122}" y="338" class="town-sub" text-anchor="middle">
         ${tr.hit_rate !== null && tr.hit_rate !== undefined ? tr.hit_rate + "% career" : "unproven"} ·
         ${st.mood}</text>
+    </g>`;
+
+  const analystHouse = (x) => `
+    <g class="house house-analyst" role="button" tabindex="0">
+      <title>The Analyst — reads the news so the Trader doesn't have to. Click for headlines.</title>
+      <line x1="${x + 122}" y1="58" x2="${x + 122}" y2="26" stroke="${trim}" stroke-width="4" stroke-linecap="round"/>
+      <line x1="${x + 104}" y1="34" x2="${x + 140}" y2="34" stroke="${trim}" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="${x + 122}" cy="22" r="5" fill="${aColor}" class="porch"/>
+      <polygon points="${x - 14},132 ${x + 122},52 ${x + 258},132" fill="${roofB}"/>
+      <rect x="${x}" y="132" width="244" height="172" fill="${wallB}"/>
+      <rect x="${x + 100}" y="224" width="46" height="80" fill="#3f4c5c"/>
+      <circle cx="${x + 138}" cy="266" r="4" fill="#c9d4e0"/>
+      <circle cx="${x + 123}" cy="206" r="8" fill="${aColor}" class="porch"/>
+      ${win(x + 24, 160, aAwake)}
+      ${win(x + 168, 160, aAwake)}
+      ${aAwake
+        ? `<circle cx="${x + 195}" cy="186" r="13" fill="#cfd6d2"/>
+           <circle cx="${x + 189}" cy="184" r="3" fill="${aColor}"/>
+           <circle cx="${x + 201}" cy="184" r="3" fill="${aColor}"/>
+           <rect x="${x + 182}" y="192" width="26" height="9" fill="#f0ead6" stroke="${trim}" stroke-width="1"/>
+           <line x1="${x + 186}" y1="196" x2="${x + 204}" y2="196" stroke="#8a8a80" stroke-width="1"/>`
+        : `<text x="${x + 56}" y="150" class="town-zzz">z</text>
+           <text x="${x + 72}" y="136" class="town-zzz z2">z</text>`}
+      <rect x="${x + 58}" y="292" width="20" height="7" fill="#f0ead6" stroke="${trim}" stroke-width="1"/>
+      <rect x="${x + 62}" y="285" width="20" height="7" fill="#e6dfc8" stroke="${trim}" stroke-width="1"/>
+      <rect x="${x + 288}" y="252" width="6" height="52" fill="${trim}"/>
+      <rect x="${x + 282}" y="238" width="44" height="26" rx="5" fill="${trim}"/>
+      ${sentToday ? `<polygon points="${x + 326},242 ${x + 326},224 ${x + 314},233" fill="${COLORS.good}"/>
+        <text x="${x + 304}" y="256" font-size="15" font-weight="700" fill="#ffd98a"
+          text-anchor="middle">${sentToday > 99 ? "99" : sentToday}</text>` : ""}
+      <rect x="${x + 70}" y="312" width="104" height="30" rx="5" fill="${trim}"/>
+      <text x="${x + 122}" y="326" class="town-label" text-anchor="middle">THE ANALYST · №2</text>
+      <text x="${x + 122}" y="338" class="town-sub" text-anchor="middle">
+        ${aAwake ? `${(scan.payload && scan.payload.n_headlines) || "?"} headlines ·
+          ${aMood === "neutral" ? "mixed" : aMood} tone` : "asleep"}</text>
     </g>`;
 
   const vacantLot = (x, num) => `
@@ -538,15 +583,20 @@ function renderTown(s, today, decisions) {
       ${[40, 180, 320, 460, 600, 740, 880].map(x =>
         `<rect x="${x}" y="377" width="56" height="5" rx="2.5" fill="#c9c245" opacity="0.8"/>`).join("")}
       ${lamp(348)} ${lamp(668)}
-      ${traderHouse(96)}
-      ${vacantLot(420, 2)}
+      ${traderHouse(80)}
+      ${analystHouse(400)}
       ${vacantLot(724, 3)}
     </svg>`;
 
-  const h = $("#town-scene .house-trader");
-  h.style.cursor = "pointer";
-  h.addEventListener("click", () => switchTab("agent"));
-  h.addEventListener("keydown", (e) => { if (e.key === "Enter") switchTab("agent"); });
+  const wire = (sel, tab) => {
+    const h = $("#town-scene " + sel);
+    if (!h) return;
+    h.style.cursor = "pointer";
+    h.addEventListener("click", () => switchTab(tab));
+    h.addEventListener("keydown", (e) => { if (e.key === "Enter") switchTab(tab); });
+  };
+  wire(".house-trader", "agent");
+  wire(".house-analyst", "news");
 }
 
 /* ---------------- scanner + calendar + alerts ---------------- */

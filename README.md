@@ -53,7 +53,7 @@ public RSS feeds — no API keys needed).
 | Tab | What it does |
 |---|---|
 | **Dashboard** | Live watchlist (big tech + SPY/QQQ) with price, change, and a composite signal per ticker; click a row for a full **agent brief** combining signal + options read + backtest stats + scorecard + weekly-timeframe confluence + headlines + a concrete trading plan. |
-| **Neighborhood** | A drawn street where your agents live. The Trader's house at №1 shows live state: windows light up when it's awake, the porch light follows its stance (green/red/blue), smoke rises when it's active, the mailbox flag goes up with today's event count, and the lawn plaque keeps its career hit rate. The sky follows your local clock — day scene with sun, night scene with moon, stars, and lit streetlamps (preview either with `?hour=12` / `?hour=22`). Click the house to step inside (the Agent tab). Two lots stay reserved for your future agents. |
+| **Neighborhood** | A drawn street where your agents live. **The Trader (№1)**: windows lit when awake, porch light follows its stance (green/red/blue), chimney smoke when active, mailbox flag up with its unread-mail count, career hit rate on the lawn plaque — click to step inside (Agent tab). **The Analyst (№2)**: rooftop antenna, a robot reading the paper in the window, porch light showing the market's news tone, mailbox counting briefings sent to the Trader today — click for headlines (Tech News tab). The sky follows your local clock — sun by day; moon, stars, and lit streetlamps at night (`?hour=12` / `?hour=22` to preview). Lot №3 stays reserved for your next agent. |
 | **Agent** | The Claude agent's visible body: an avatar whose mood follows its latest stance (bullish / bearish / watching / asleep), a speech bubble with its current thinking, a live diary of every analysis, order, and fill it performs through the Robinhood MCP server, and its graded report card — hit rate, average forward return, best call — from the tracking store. |
 | **Scanner** | Morning sweep of the watchlist ranked by signal strength, fresh threshold crossings, and daily/weekly agreement (earnings drag rank down). Includes a macro calendar (FOMC/CPI) and a live **alert feed**: a background engine re-checks the watchlist and your open positions every 5 minutes and raises alerts for signal crossings, positions near expiry/earnings, and expired contracts — with optional browser/phone notifications. |
 | **Analyze** | Price chart with SMA20/50 + Bollinger bands, RSI, and the composite score history; a table explaining every indicator's vote and weight; and the **agent scorecard** — every historical crossing of the live signal on this ticker over 3 years, graded on forward returns, so you know the signal's actual win rate before trusting it. |
@@ -90,13 +90,24 @@ The repo doubles as a Claude Code agent workspace wired to Robinhood:
   undefined-risk (naked) options are allowed — so every session follows the
   same rules instead of improvising them. Edit that section directly to
   change your limits.
-- **Agent tracking** (`app/tracking.py`) records what the agent does in two
-  tables inside `journal.db`: `agent_events` (orders, fills, positions, data
-  pulls — raw payloads preserved) and `agent_decisions` (every
-  recommendation with its full signal snapshot). `python3 -m app evaluate`
-  later grades each directional call against the realized forward move, so
+- **Agent tracking** (`app/tracking.py`) records what the agents do in
+  `journal.db`: `agent_events` (orders, fills, positions, data pulls — raw
+  payloads preserved) and `agent_decisions` (every recommendation with its
+  full signal snapshot). `python3 -m app evaluate` later grades each
+  directional call against the realized forward move, so
   `python3 -m app report` shows the agent's actual hit rate — the same
   self-accountability the scorecard applies to the signal.
+- **The Analyst** (`app/newsagent.py`) is agent №2: every 15 minutes while
+  the server runs (or via `python3 -m app news-scan`), it sweeps all the news
+  feeds, aggregates sentiment per ticker, and watches macro-risk topics
+  (Fed/rates, CPI, tariffs, geopolitics, credit). Findings land in the
+  Trader's **inbox** (`agent_messages` — the inter-agent message bus):
+  routine digests as briefings, headline clusters and macro topics as
+  high-priority alerts, deduped so a 15-minute cadence can't flood the box.
+  The Trader reads its mail at the start of every session
+  (`python3 -m app inbox --agent trader --unread`), and autonomous runs
+  treat a fresh high-priority alert as a reason to sit out. The Analyst
+  never touches broker tools: it informs, the Trader decides.
 
 The console works standalone too:
 

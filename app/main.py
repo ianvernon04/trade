@@ -20,8 +20,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (alerts, backtest, calendar_events, data, journal, news, options,
-               positions, scanner, scorecard, tracking)
+from . import (alerts, backtest, calendar_events, data, journal, news, newsagent,
+               options, positions, scanner, scorecard, tracking)
 from .signals import score_frame, score_series
 
 
@@ -42,6 +42,7 @@ app = FastAPI(title="Options Trading Assistant", default_response_class=SafeJSON
 journal.init()
 tracking.init()
 alerts.start_background_thread()
+newsagent.start_background_thread()
 
 # Optional shared password for hosted/shared deployments. When APP_PASSWORD is
 # set, every request must carry HTTP Basic auth with that password (any
@@ -542,6 +543,71 @@ def tracking_evaluate(period: str = "1y"):
 @app.get("/api/tracking/export")
 def tracking_export():
     return tracking.export_all()
+
+
+# ---------- Inter-agent messages (the bus the agents talk over) ----------
+
+class MessageIn(BaseModel):
+    from_agent: str
+    to_agent: str
+    subject: str
+    body: Optional[str] = None
+    kind: str = "note"
+    priority: str = "normal"
+    ticker: Optional[str] = None
+    payload: Any = None
+
+
+class MarkReadIn(BaseModel):
+    agent: str
+    ids: Optional[list[int]] = None   # None = whole inbox
+
+
+@app.get("/api/messages")
+def messages_inbox(agent: str = "trader", unread: bool = False,
+                   limit: int = Query(50, ge=1, le=1000)):
+    return {"messages": tracking.inbox(agent, unread_only=unread, limit=limit),
+            "unread": tracking.unread_count(agent)}
+
+
+@app.post("/api/messages")
+def messages_send(m: MessageIn):
+    try:
+        return tracking.send_message(m.from_agent, m.to_agent, m.subject, body=m.body,
+                                     kind=m.kind, priority=m.priority, ticker=m.ticker,
+                                     payload=m.payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/messages/read")
+def messages_mark_read(m: MarkReadIn):
+    return {"marked": tracking.mark_read(m.agent, m.ids)}
+
+
+@app.post("/api/news/scan")
+def news_scan_now():
+    """Manual Analyst cycle (the background thread also runs one every 15 min)."""
+    return _safe(lambda: newsagent.run_scan())
+
+
+@app.get("/api/town/status")
+def town_status():
+    """Everything the Neighborhood needs in one local-only call."""
+    from datetime import datetime, timedelta, timezone
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
+    scans = tracking.list_events(kind="news_scan", limit=1)
+    return {
+        "trader": {
+            "summary": tracking.summary(),
+            "decisions": tracking.list_decisions(limit=30),
+            "unread_mail": tracking.unread_count("trader"),
+        },
+        "analyst": {
+            "last_scan": scans[0] if scans else None,
+            "sent_today": len(tracking.messages_sent("analyst", since=today, limit=1000)),
+        },
+    }
 
 
 # ---------- Static frontend ----------

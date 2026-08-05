@@ -15,8 +15,11 @@ every action and every call you make so the system can grade itself.
 - `app/options.py` — chain analytics, greeks, IV context, CALL/PUT/NO TRADE rec
 - `app/backtest.py`, `app/scorecard.py` — historical validation of the same signal
 - `app/journal.py` — the human's manual UI journal (per-user, auth'd)
-- `app/tracking.py` — **the agent's memory**: every event, decision, and graded
-  outcome (tables `agent_events` / `agent_decisions` in `journal.db`)
+- `app/tracking.py` — **the agents' memory**: every event, decision, and graded
+  outcome, plus the inter-agent message bus (tables `agent_events` /
+  `agent_decisions` / `agent_messages` in `journal.db`)
+- `app/newsagent.py` — **the Analyst (agent №2)**: scans news feeds, mails
+  briefings/alerts to the Trader; never touches broker tools
 - `app/agent_cli.py` — your console: `python3 -m app <command>`
 - `tests/` — `python3 -m unittest discover -s tests`
 
@@ -29,6 +32,29 @@ authenticates (`/mcp` → login). If the tools are missing or unauthenticated,
 say so and fall back to Yahoo-backed app modules for data; never fake broker
 state.
 
+## The agents
+
+Two agents share this repo, one brain each, talking over the message bus:
+
+- **The Trader** (`trader`) — everything in this file up to now: analyzes,
+  proposes, and (with approval) executes through the Robinhood MCP server.
+- **The Analyst** (`analyst`, `app/newsagent.py`) — reads all the news feeds
+  so the Trader doesn't have to. It aggregates headline sentiment per ticker,
+  flags same-direction clusters, and watches macro-risk topics (Fed/rates,
+  CPI, tariffs, geopolitics, credit). Findings arrive in the Trader's inbox
+  as normal-priority briefings and high-priority alerts. The Analyst runs
+  automatically every 15 minutes while the web server is up
+  (`newsagent.start_background_thread`), or on demand / from cron with
+  `python3 -m app news-scan`. **The Analyst never calls broker tools and
+  never records trade decisions — it informs; the Trader decides.**
+
+A session can act as either agent (or both in sequence), but keep the roles
+clean in the data: news analysis events come from `analyst`, trade decisions
+from the Trader's sources. Messages between them are plain rows —
+`python3 -m app send --from analyst --to trader ...` — so richer judgment
+(e.g. an LLM-written market read) can ride the same bus as the automated
+scans.
+
 ## The tracking discipline (non-negotiable)
 
 The value of this system compounds only if the dataset is complete. Follow
@@ -36,6 +62,10 @@ these rules in every session:
 
 1. **Start of session:** `python3 -m app evaluate` (grade matured calls), then
    `python3 -m app report` — know the track record before making new calls.
+   Then **read the mail**: `python3 -m app inbox --agent trader --unread` —
+   weigh what the Analyst has flagged, then mark it read (`--mark-read`).
+   Unread high-priority alerts are context the account owner expects you to
+   have; don't recommend around them.
 2. **Before any recommendation or trade:** `python3 -m app analyze TICKER`
    (add `--options --weekly` for conviction checks). This records the
    decision with its full signal snapshot automatically. Use
@@ -118,9 +148,15 @@ above instead; autonomous mode is the exception, not the default.
    hit rate under 40%, stop — log a note explaining why and place no trades
    this run. A cold streak is exactly when autonomous size should shrink to
    zero, not when it should keep firing.
-2. `python3 -m app scan` (or `GET /api/scan` if the server's up) to rank
+2. **Read the inbox:** `python3 -m app inbox --agent trader --unread`. A
+   high-priority Analyst alert from the last 12 hours (macro risk or a
+   negative cluster on the candidate ticker) means **no new positions this
+   run** — log a note naming the alert and stop. With nobody watching, news
+   risk is a reason to sit out, never a judgment call to trade through.
+   Mark the mail read once processed.
+3. `python3 -m app scan` (or `GET /api/scan` if the server's up) to rank
    today's setups.
-3. **Entry-quality bar** — a setup may be considered only if *all* hold:
+4. **Entry-quality bar** — a setup may be considered only if *all* hold:
    - `crossed_buy` or `crossed_sell` is true (a fresh threshold cross, not
      an already-established score) **and** `confluence` is `"agree"` (daily
      and weekly timeframes agree). Deliberately a higher bar than live chat
@@ -128,7 +164,7 @@ above instead; autonomous mode is the exception, not the default.
    - `earnings_in_days` is `null` or falls beyond the option's expiry. Skip
      entirely if earnings land before expiry — IV-crush judgment calls need
      a human, and autonomous mode doesn't make them.
-4. **Risk gate — run it on every order, no exceptions:**
+5. **Risk gate — run it on every order, no exceptions:**
 
    ```
    python3 -m app autonomy check --payload '{"ticker":"NVDA","strategy":"long_call",
@@ -141,7 +177,7 @@ above instead; autonomous mode is the exception, not the default.
    policy mid-run to make a denied order pass: the policy is the owner's
    standing instruction, not something to negotiate with.
 
-5. For an order that clears both the entry bar and the gate: log the
+6. For an order that clears both the entry bar and the gate: log the
    proposal (`python3 -m app log proposal ...`) with the exact contract
    *before* calling the order tool, place it, then immediately record it so
    it counts toward the daily cap and lands in the audit trail:
@@ -152,7 +188,7 @@ above instead; autonomous mode is the exception, not the default.
    ```
 
    Link the decision with `--order-id` — identical to live-chat discipline.
-6. Whether or not anything traded, end by logging a `note` event summarizing
+7. Whether or not anything traded, end by logging a `note` event summarizing
    the run (what was scanned, what passed/failed, what happened) so a human
    reading the diary later has the full picture.
 
@@ -224,6 +260,9 @@ python3 -m app decide --ticker NVDA --action call --price 181.2 --rationale "...
 python3 -m app log proposal --ticker NVDA --note "<exact order ticket stated in chat>"
 python3 -m app log order --ticker NVDA --source robinhood-mcp --payload '{...}' | @file | -
 python3 -m app ingest --payload - [--kind positions] [--source robinhood-mcp]
+python3 -m app news-scan [--no-send]        # one Analyst cycle: feeds → analysis → trader inbox
+python3 -m app inbox [--agent trader] [--unread] [--mark-read]
+python3 -m app send --from analyst --to trader --subject "..." [--body ...] [--priority high]
 python3 -m app scan [--tickers AAPL,MSFT,...] [--json]  # rank today's setups (autonomous mode)
 python3 -m app evaluate [--period 1y]        # grade matured decisions
 python3 -m app report [--days 30]            # activity + track record

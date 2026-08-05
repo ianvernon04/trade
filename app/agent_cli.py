@@ -318,6 +318,69 @@ def cmd_decisions(args) -> int:
     return 0
 
 
+def cmd_news_scan(args) -> int:
+    """One Analyst cycle: scan feeds, log the analysis, mail the Trader."""
+    from . import newsagent
+    res = newsagent.run_scan(send=not args.no_send)
+
+    def human(o):
+        a = o["analysis"]
+        ov = a["overall"]
+        print(f"Scanned {a['n_headlines']} headlines — {ov['sentiment']} tone "
+              f"({ov['positive']} pos / {ov['negative']} neg, net {ov['net_ratio']:+.2f})")
+        for m in a["macro"]:
+            print(f"  macro: {m['topic']} ×{m['count']}")
+        for t, d in list(a["tickers"].items())[:8]:
+            print(f"  {t:<6} {d['mentions']:>2} mention(s)  net {d['net']:+d}")
+        if o["delivered"]:
+            print("Delivered to trader:")
+            for m in o["delivered"]:
+                flag = "❗" if m["priority"] == "high" else "·"
+                print(f"  {flag} {m['subject']}")
+        if o["deduped"]:
+            print(f"({o['deduped']} message(s) suppressed as recent duplicates)")
+
+    _out(res, args.json, human)
+    return 0
+
+
+def cmd_inbox(args) -> int:
+    msgs = tracking.inbox(args.agent, unread_only=args.unread, limit=args.limit)
+
+    def human(ms):
+        if not ms:
+            print(f"Inbox for '{args.agent}' is empty"
+                  + (" (no unread)" if args.unread else "") + ".")
+            return
+        for m in ms:
+            flag = "❗" if m["priority"] == "high" else " "
+            state = "unread" if m["read_at"] is None else "read"
+            print(f"#{m['id']:<5}{flag}{m['ts'][:16]} [{m['kind']}] "
+                  f"from {m['from_agent']}"
+                  + (f" · {m['ticker']}" if m["ticker"] else "") + f" ({state})")
+            print(f"      {m['subject']}")
+            if m["body"]:
+                print(f"      {m['body'][:300]}")
+        print(f"({len(ms)} message(s), {tracking.unread_count(args.agent)} unread total)")
+
+    _out(msgs, args.json, human)
+    if args.mark_read and msgs:
+        n = tracking.mark_read(args.agent, [m["id"] for m in msgs])
+        if not args.json:
+            print(f"Marked {n} message(s) read.")
+    return 0
+
+
+def cmd_send(args) -> int:
+    m = tracking.send_message(
+        args.from_agent, args.to, args.subject, body=args.body, kind=args.kind,
+        priority=args.priority, ticker=args.ticker,
+        payload=_payload_from(args.payload))
+    _out(m, args.json, lambda o: print(
+        f"Sent message #{o['id']} {args.from_agent} → {args.to}: {o['subject']}"))
+    return 0
+
+
 def cmd_autonomy(args) -> int:
     """Inspect or change the unattended-trading policy, or gate one order."""
     if args.action == "status":
@@ -482,6 +545,31 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--limit", type=int, default=50)
     jflag(sp)
     sp.set_defaults(fn=cmd_decisions)
+
+    sp = sub.add_parser("news-scan", help="run one Analyst cycle: feeds → analysis → trader inbox")
+    sp.add_argument("--no-send", action="store_true", help="analyze and log only, deliver no mail")
+    jflag(sp)
+    sp.set_defaults(fn=cmd_news_scan)
+
+    sp = sub.add_parser("inbox", help="read an agent's messages")
+    sp.add_argument("--agent", default="trader", help="whose inbox (default: trader)")
+    sp.add_argument("--unread", action="store_true", help="only unread")
+    sp.add_argument("--mark-read", action="store_true", help="mark listed messages read")
+    sp.add_argument("--limit", type=int, default=25)
+    jflag(sp)
+    sp.set_defaults(fn=cmd_inbox)
+
+    sp = sub.add_parser("send", help="send a message between agents")
+    sp.add_argument("--from", dest="from_agent", required=True, help="sender agent id")
+    sp.add_argument("--to", required=True, help="recipient agent id")
+    sp.add_argument("--subject", required=True)
+    sp.add_argument("--body")
+    sp.add_argument("--kind", default="note", choices=["briefing", "alert", "note"])
+    sp.add_argument("--priority", default="normal", choices=["normal", "high"])
+    sp.add_argument("--ticker")
+    sp.add_argument("--payload", help="inline JSON, @file, or '-'")
+    jflag(sp)
+    sp.set_defaults(fn=cmd_send)
 
     sp = sub.add_parser("autonomy", help="unattended-trading policy: status/enable/disable/set/check")
     sp.add_argument("action", choices=["status", "enable", "disable", "set", "check"])
