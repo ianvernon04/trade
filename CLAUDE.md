@@ -34,7 +34,7 @@ state.
 
 ## The agents
 
-Two agents share this repo, one brain each, talking over the message bus:
+Five agents share this repo, one brain each, talking over the message bus:
 
 - **The Trader** (`trader`) — everything in this file up to now: analyzes,
   proposes, and (with approval) executes through the Robinhood MCP server.
@@ -44,16 +44,30 @@ Two agents share this repo, one brain each, talking over the message bus:
   CPI, tariffs, geopolitics, credit). Findings arrive in the Trader's inbox
   as normal-priority briefings and high-priority alerts. The Analyst runs
   automatically every 15 minutes while the web server is up
-  (`newsagent.start_background_thread`), or on demand / from cron with
-  `python3 -m app news-scan`. **The Analyst never calls broker tools and
-  never records trade decisions — it informs; the Trader decides.**
+  (`newsagent.start_background_thread`), or on demand with
+  `python3 -m app news-scan`. **The Analyst never calls broker tools.**
+- **The Position Manager** (`position_manager`, `app/positionagent.py`) —
+  monitors all open positions for exits/rolls: flags contracts nearing expiry,
+  earnings events before expiration, and positions up/down >50%. Sends alerts
+  to the Trader's inbox. Runs every 30 minutes or on demand with
+  `python3 -m app position-scan`.
+- **The Risk Manager** (`risk_manager`, `app/riskagent.py`) — aggregates
+  portfolio-level Greeks (delta, gamma, theta) and concentration. Flags
+  leverage, unhedged exposures, and single-ticker dominance that could blow
+  up the account in a tail move. Runs every 60 minutes or on demand with
+  `python3 -m app risk-scan`.
+- **The Pattern Engine** (`pattern_engine`, `app/patternagent.py`) — mines
+  your decision history (`agent_decisions` table) to extract high-confidence
+  repeating patterns: tickers you win on, directions/strategies with higher
+  edge, IV regimes and day-of-week biases. Sends briefing summaries so the
+  Trader can bias toward proven configurations. Runs every 4 hours or on
+  demand with `python3 -m app pattern-scan`.
 
-A session can act as either agent (or both in sequence), but keep the roles
-clean in the data: news analysis events come from `analyst`, trade decisions
-from the Trader's sources. Messages between them are plain rows —
-`python3 -m app send --from analyst --to trader ...` — so richer judgment
-(e.g. an LLM-written market read) can ride the same bus as the automated
-scans.
+All agents inform the Trader; none call broker tools. A session can act as
+the Trader (deciding and executing), or read agent mail with
+`python3 -m app inbox --agent trader`. Messages between agents are plain
+rows in `agent_messages` — `python3 -m app send --from analyst --to trader
+...` — so custom judgment can ride the same bus as automated scans.
 
 ## The tracking discipline (non-negotiable)
 
@@ -260,7 +274,10 @@ python3 -m app decide --ticker NVDA --action call --price 181.2 --rationale "...
 python3 -m app log proposal --ticker NVDA --note "<exact order ticket stated in chat>"
 python3 -m app log order --ticker NVDA --source robinhood-mcp --payload '{...}' | @file | -
 python3 -m app ingest --payload - [--kind positions] [--source robinhood-mcp]
-python3 -m app news-scan [--no-send]        # one Analyst cycle: feeds → analysis → trader inbox
+python3 -m app news-scan [--no-send]         # one Analyst cycle: feeds → analysis → trader inbox
+python3 -m app position-scan [--user-id N] [--no-send]  # Position Manager: positions → exits/alerts
+python3 -m app risk-scan [--no-send]         # Risk Manager: portfolio Greeks → risk alerts
+python3 -m app pattern-scan [--no-send]      # Pattern Engine: decision history → profitable patterns
 python3 -m app inbox [--agent trader] [--unread] [--mark-read]
 python3 -m app send --from analyst --to trader --subject "..." [--body ...] [--priority high]
 python3 -m app scan [--tickers AAPL,MSFT,...] [--json]  # rank today's setups (autonomous mode)
