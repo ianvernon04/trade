@@ -31,12 +31,48 @@ TECH_FEEDS = {
     "Engadget": "https://www.engadget.com/rss.xml",
 }
 
-POSITIVE = re.compile(
-    r"\b(surge|soar|jump|rall(y|ies)|beat|record|upgrade|bullish|gain|rise|"
-    r"outperform|breakthrough|strong|growth|profit|top|boost|win)\b", re.I)
-NEGATIVE = re.compile(
-    r"\b(plunge|crash|fall|drop|tumble|miss|downgrade|bearish|loss|lawsuit|"
-    r"layoff|cut|weak|slump|decline|recall|probe|fine|warn|fear|sell-?off)\b", re.I)
+# Sentiment stems, inflected automatically. Headlines are written in the
+# present tense — "Alphabet's stock drops", "Google loses an executive" — so
+# matching only the bare stem missed most of them: \bdrop\b cannot match
+# "drops", \bfall\b cannot match "falls". Every miss scored the headline
+# neutral rather than negative, which is the dangerous direction here: the
+# Analyst gates autonomous trading on negative clusters, so a miss silently
+# removes a safety check rather than tripping one.
+#
+# Ambiguous stems are deliberately absent. "top" matched "top AI researchers"
+# (leading) far more often than "tops estimates"; "fine" and "probe" have
+# common non-financial senses. Where a word only carries signal inflected,
+# the inflected form is listed on its own — "tops", not "top".
+_POSITIVE_STEMS = [
+    "surge", "soar", "jump", "rally", "rallies", "beat", "record", "upgrade",
+    "bullish", "gain", "rise", "outperform", "breakthrough", "strong",
+    "growth", "profit", "tops", "boost", "win", "climb", "advance", "expand",
+]
+_NEGATIVE_STEMS = [
+    "plunge", "crash", "fall", "drop", "tumble", "miss", "downgrade",
+    "bearish", "loss", "lose", "lawsuit", "layoff", "cut", "weak", "slump",
+    "decline", "recall", "probe", "warn", "fear", "sink", "slide", "halt",
+    "resign", "step down", "steps down", "stepping down", "depart", "exit",
+    "sell-off", "selloff", "slash", "plummet", "downturn",
+]
+
+# (e)s / ed / ing, plus doubled-consonant forms (dropped, dropping) and
+# y -> ies. Kept as one suffix group so a new stem needs no extra thought.
+_INFLECT = r"(?:s|es|ed|d|ing|ped|ping|bed|bing|ned|ning|ged|ging)?"
+
+
+def _stem_re(stems: list[str]) -> re.Pattern:
+    parts = []
+    for s in stems:
+        if " " in s:                      # multi-word phrases: match verbatim
+            parts.append(re.escape(s))
+        else:
+            parts.append(re.escape(s) + _INFLECT)
+    return re.compile(r"\b(?:" + "|".join(parts) + r")\b", re.I)
+
+
+POSITIVE = _stem_re(_POSITIVE_STEMS)
+NEGATIVE = _stem_re(_NEGATIVE_STEMS)
 
 _cache: dict[str, tuple[float, list]] = {}
 _lock = threading.Lock()
