@@ -332,6 +332,8 @@ def cmd_autonomy(args) -> int:
             print(f"  defined-risk only:  {p['defined_risk_only']}")
             print(f"  require max loss:   {p['require_max_loss']}")
             print(f"  ticker allowlist:   {p['allowed_tickers'] or 'none (any ticker)'}")
+            print(f"  strategy allowlist: "
+                  f"{', '.join(p['allowed_strategies']) or 'none (any strategy)'}")
             print(f"  policy file:        {autonomy.POLICY_PATH}")
 
         _out({**p, "trades_today": used}, args.json, human)
