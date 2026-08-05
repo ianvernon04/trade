@@ -416,9 +416,31 @@ function renderAgentBody(s, events, decisions) {
 const MOOD_COLOR = () => ({ bullish: COLORS.good, bearish: COLORS.crit,
   neutral: COLORS.s1, asleep: "#8a8a80" });
 
+/* The street is wider than the viewport; the SVG scales to fit, so adding a
+   house means extending SCENE_W rather than cramming the existing lots. */
+const SCENE_W = 1420;
+
 const STARS = [[60, 40], [140, 88], [230, 30], [320, 66], [430, 24], [510, 90],
   [590, 44], [680, 20], [760, 74], [840, 36], [910, 96], [970, 50],
-  [180, 130], [400, 120], [700, 118], [880, 140]];
+  [180, 130], [400, 120], [700, 118], [880, 140],
+  [1040, 32], [1120, 84], [1210, 28], [1300, 70], [1060, 132], [1250, 124]];
+
+/* Each junior agent's house reads its own last scan: awake if it ran within
+   its stale window, porch light coloured by what it found, one line of live
+   stats on the plaque. Returns nulls when the agent has never run. */
+function residentState(res, staleHours, read) {
+  const scan = res && res.last_scan;
+  const ageH = scan ? (Date.now() - new Date(scan.ts).getTime()) / 3600000 : Infinity;
+  const awake = ageH < staleHours;
+  const payload = (scan && scan.payload) || null;
+  const r = awake && payload ? read(payload) : null;
+  return {
+    awake,
+    mood: !awake ? "asleep" : (r && r.mood) || "neutral",
+    line: !awake ? "asleep" : (r && r.line) || "no findings",
+    sent: (res && res.sent_today) || 0,
+  };
+}
 
 async function loadTown() {
   try {
@@ -448,6 +470,37 @@ function renderTown(t) {
     : tone === "bullish" ? "bullish" : tone === "bearish" ? "bearish" : "neutral";
   const aColor = MOOD_COLOR()[aMood];
   const sentToday = t.analyst.sent_today || 0;
+
+  // The three junior agents. Stale windows are ~2× each agent's own cadence
+  // (30 / 60 / 240 min), so one missed cycle doesn't put a house to sleep.
+  const pm = residentState(t.position_manager, 1.5, (p) => {
+    const n = p.n_positions || 0;
+    if (!n) return { mood: "neutral", line: "no open positions" };
+    const urgent = (p.earnings_warns || []).length
+      || (p.actions || []).some((a) => a.type === "reversal");
+    return {
+      mood: urgent ? "bearish" : (p.actions || []).length ? "neutral" : "bullish",
+      line: `${n} position${n === 1 ? "" : "s"} · ${(p.actions || []).length} to review`,
+    };
+  });
+  const rm = residentState(t.risk_manager, 3, (p) => ({
+    mood: p.risk_level === "high" ? "bearish"
+      : p.risk_level === "medium" ? "neutral" : "bullish",
+    line: p.n_positions
+      ? `Δ${p.net_delta >= 0 ? "+" : ""}${Math.round(p.net_delta)} · ${p.risk_level} risk`
+      : "portfolio flat",
+  }));
+  const pe = residentState(t.pattern_engine, 12, (p) => {
+    if (p.status !== "ok") {
+      return { mood: "neutral", line: `${p.n_decisions || 0}/${p.min_required || 20} calls` };
+    }
+    const n = (p.findings || []).length;
+    return {
+      mood: n ? "bullish" : "neutral",
+      line: `${n} edge${n === 1 ? "" : "s"} from ${p.n_decisions} calls`,
+    };
+  });
+
   const hourParam = new URLSearchParams(location.search).get("hour");
   const hour = hourParam !== null ? parseInt(hourParam, 10) : new Date().getHours();
   const night = !(hour >= 7 && hour < 19);
@@ -464,11 +517,11 @@ function renderTown(t) {
   const winLit = "#ffd98a", winDark = night ? "#141b26" : "#2a3442";
 
   const celestial = night
-    ? `<circle cx="850" cy="70" r="30" fill="#e8e6d8"/>
-       <circle cx="840" cy="62" r="6" fill="#cdcaba"/><circle cx="862" cy="80" r="4" fill="#cdcaba"/>
+    ? `<circle cx="1268" cy="54" r="30" fill="#e8e6d8"/>
+       <circle cx="1258" cy="46" r="6" fill="#cdcaba"/><circle cx="1280" cy="64" r="4" fill="#cdcaba"/>
        ${STARS.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.6" fill="#e9edf5" class="star"/>`).join("")}`
-    : `<circle cx="850" cy="70" r="34" fill="#ffd76a"/>
-       <circle cx="850" cy="70" r="46" fill="#ffd76a" opacity="0.25"/>`;
+    : `<circle cx="1268" cy="54" r="34" fill="#ffd76a"/>
+       <circle cx="1268" cy="54" r="46" fill="#ffd76a" opacity="0.25"/>`;
 
   const lamp = (x) => `
     <g>
@@ -478,12 +531,12 @@ function renderTown(t) {
       ${night ? `<circle cx="${x + 3}" cy="238" r="16" fill="#ffd98a" opacity="0.18"/>` : ""}
     </g>`;
 
-  const win = (x, y, lit) => `
+  const win = (x, y, lit, w = 54, h = 46) => `
     <g>
-      <rect x="${x}" y="${y}" width="54" height="46" fill="${lit ? winLit : winDark}"
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${lit ? winLit : winDark}"
         stroke="${trim}" stroke-width="3" class="${lit ? "win-lit" : ""}"/>
-      <line x1="${x + 27}" y1="${y}" x2="${x + 27}" y2="${y + 46}" stroke="${trim}" stroke-width="2"/>
-      <line x1="${x}" y1="${y + 23}" x2="${x + 54}" y2="${y + 23}" stroke="${trim}" stroke-width="2"/>
+      <line x1="${x + w / 2}" y1="${y}" x2="${x + w / 2}" y2="${y + h}" stroke="${trim}" stroke-width="2"/>
+      <line x1="${x}" y1="${y + h / 2}" x2="${x + w}" y2="${y + h / 2}" stroke="${trim}" stroke-width="2"/>
     </g>`;
 
   const traderHouse = (x) => `
@@ -553,28 +606,50 @@ function renderTown(t) {
           ${aMood === "neutral" ? "mixed" : aMood} tone` : "asleep"}</text>
     </g>`;
 
-  const agentHouse = (x, num, agentName, symbol) => {
-    // Smaller houses for agents 3, 4, 5. Each is ~100px wide.
-    const colors = {
-      3: { roof: "#6b4a40", wall: "#c9a5b8", trim: "#8b5a6b" },
-      4: { roof: "#3f4c5c", wall: "#a5b8cd", trim: "#5a6a7b" },
-      5: { roof: "#4a5c3f", wall: "#b8cda5", trim: "#6a7b5a" }
-    };
-    const c = colors[num] || colors[3];
-    return `
-      <g class="house house-agent-${num}" role="button" tabindex="0">
-        <title>${agentName}</title>
-        <polygon points="${x},120 ${x + 50},60 ${x + 100},120" fill="${c.roof}"/>
-        <rect x="${x}" y="120" width="100" height="90" fill="${c.wall}"/>
-        <rect x="${x + 18}" y="135" width="25" height="30" fill="${night ? "#141b26" : "#2a3442}"/>
-        <rect x="${x + 57}" y="135" width="25" height="30" fill="${night ? "#141b26" : "#2a3442}"/>
-        <rect x="${x + 20}" y="175" width="60" height="20" fill="#5c4033"/>
-        <circle cx="${x + 50}" cy="137" r="3" fill="#c9a86a"/>
-        <rect x="${x - 8}" y="210" width="116" height="25" rx="4" fill="${c.trim}"/>
-        <text x="${x + 50}" y="222" class="town-label" text-anchor="middle" font-size="13">${symbol}</text>
-        <text x="${x + 50}" y="234" class="town-sub" text-anchor="middle" font-size="10">Agent №${num}</text>
-      </g>`;
-  };
+  /* The junior agents' cottages: same street, half the footprint. 140 wide,
+     base on the grass line at y=304 exactly like the two big houses, so the
+     row reads as one block. `roof` distinguishes the trade (see callers). */
+  const cottage = (x, cls, num, name, title, state, tint, rooftop) => `
+    <g class="house ${cls}" role="button" tabindex="0">
+      <title>${title}</title>
+      ${rooftop(x)}
+      <polygon points="${x - 10},188 ${x + 70},134 ${x + 150},188" fill="${tint.roof}"/>
+      <rect x="${x}" y="188" width="140" height="116" fill="${tint.wall}"/>
+      ${win(x + 16, 208, state.awake, 38, 34)}
+      ${win(x + 86, 208, state.awake, 38, 34)}
+      ${state.awake ? "" : `<text x="${x + 112}" y="204" class="town-zzz">z</text>
+        <text x="${x + 126}" y="192" class="town-zzz z2">z</text>`}
+      <rect x="${x + 55}" y="256" width="30" height="48" fill="#57422f"/>
+      <circle cx="${x + 78}" cy="281" r="3" fill="#c9a86a"/>
+      <circle cx="${x + 70}" cy="248" r="6" fill="${MOOD_COLOR()[state.mood]}" class="porch"/>
+      <rect x="${x + 158}" y="262" width="5" height="42" fill="${trim}"/>
+      <rect x="${x + 152}" y="250" width="34" height="20" rx="4" fill="${trim}"/>
+      ${state.sent ? `<polygon points="${x + 186},253 ${x + 186},238 ${x + 176},246" fill="${COLORS.good}"/>
+        <text x="${x + 169}" y="265" font-size="12" font-weight="700" fill="#ffd98a"
+          text-anchor="middle">${state.sent > 99 ? "99" : state.sent}</text>` : ""}
+      <rect x="${x + 6}" y="312" width="128" height="30" rx="5" fill="${trim}"/>
+      <text x="${x + 70}" y="326" class="town-label" text-anchor="middle">${name} · №${num}</text>
+      <text x="${x + 70}" y="338" class="town-sub" text-anchor="middle">${esc(state.line)}</text>
+    </g>`;
+
+  // Position Manager: a watchtower cupola — it stands over the open book.
+  const pmRoof = (x) => `
+    <rect x="${x + 58}" y="108" width="24" height="30" fill="${trim}"/>
+    <polygon points="${x + 52},108 ${x + 70},92 ${x + 88},108" fill="${roof}"/>
+    <circle cx="${x + 70}" cy="121" r="5" fill="${pm.awake ? winLit : winDark}" class="${pm.awake ? "win-lit" : ""}"/>`;
+
+  // Risk Manager: scales on the ridge — the portfolio weighed against itself.
+  const rmRoof = (x) => `
+    <line x1="${x + 70}" y1="134" x2="${x + 70}" y2="104" stroke="${trim}" stroke-width="4" stroke-linecap="round"/>
+    <line x1="${x + 44}" y1="106" x2="${x + 96}" y2="106" stroke="${trim}" stroke-width="3" stroke-linecap="round"/>
+    <path d="M${x + 44} 106 l-7 12 h14 z" fill="${MOOD_COLOR()[rm.mood]}"/>
+    <path d="M${x + 96} 106 l-7 12 h14 z" fill="${MOOD_COLOR()[rm.mood]}"/>`;
+
+  // Pattern Engine: a memory spire, brighter the more edges it has found.
+  const peRoof = (x) => `
+    <line x1="${x + 70}" y1="134" x2="${x + 70}" y2="98" stroke="${trim}" stroke-width="4" stroke-linecap="round"/>
+    ${[0, 1, 2].map((i) => `<circle cx="${x + 70}" cy="${112 + i * 11}" r="${7 - i * 1.5}"
+      fill="${MOOD_COLOR()[pe.mood]}" opacity="${pe.awake ? 0.9 - i * 0.22 : 0.25}"/>`).join("")}`;
 
   const vacantLot = (x, num) => `
     <g class="lot">
@@ -590,27 +665,30 @@ function renderTown(t) {
       <text x="${x + 106}" y="219" font-size="11" fill="#7a6a50" text-anchor="middle">for agent №${num}</text>
     </g>`;
 
+  const stripes = [];
+  for (let x = 40; x < SCENE_W; x += 140) stripes.push(x);
+
   $("#town-scene").innerHTML = `
-    <svg viewBox="0 0 1000 400" role="img" aria-label="Agent neighborhood"
+    <svg viewBox="0 0 ${SCENE_W} 400" role="img" aria-label="Agent neighborhood"
       style="width:100%;height:auto;display:block;border-radius:8px">
       <defs>
         <linearGradient id="skyG" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="${sky[0]}"/><stop offset="1" stop-color="${sky[1]}"/>
         </linearGradient>
       </defs>
-      <rect width="1000" height="316" fill="url(#skyG)"/>
+      <rect width="${SCENE_W}" height="316" fill="url(#skyG)"/>
       ${celestial}
-      <rect y="300" width="1000" height="44" fill="${grass}"/>
-      <rect y="344" width="1000" height="14" fill="${walk}"/>
-      <rect y="358" width="1000" height="42" fill="${road}"/>
-      ${[40, 180, 320, 460, 600, 740, 880].map(x =>
+      <rect y="300" width="${SCENE_W}" height="44" fill="${grass}"/>
+      <rect y="344" width="${SCENE_W}" height="14" fill="${walk}"/>
+      <rect y="358" width="${SCENE_W}" height="42" fill="${road}"/>
+      ${stripes.map(x =>
         `<rect x="${x}" y="377" width="56" height="5" rx="2.5" fill="#c9c245" opacity="0.8"/>`).join("")}
-      ${lamp(348)} ${lamp(668)}
+      ${lamp(348)} ${lamp(742)} ${lamp(1370)}
       ${traderHouse(80)}
       ${analystHouse(400)}
-      ${agentHouse(500, 3, "Position Manager — monitors open positions", "📍")}
-      ${agentHouse(650, 4, "Risk Manager — aggregates portfolio Greeks", "⚖")}
-      ${agentHouse(800, 5, "Pattern Engine — learns from decision history", "🧠")}
+      ${cottage(770, "house-pm", 3, "POSITIONS", "The Position Manager — watches open positions for exits, rolls, expiry and earnings risk. Click for your positions.", pm, { roof, wall: night ? "#8c7c86" : "#c9b3bf" }, pmRoof)}
+      ${cottage(960, "house-rm", 4, "RISK", "The Risk Manager — weighs portfolio delta, theta and concentration. Click for your positions.", rm, { roof: roofB, wall: wallB }, rmRoof)}
+      ${cottage(1150, "house-pe", 5, "PATTERNS", "The Pattern Engine — mines graded calls for repeatable edge. Click for the track record.", pe, { roof: night ? "#33452f" : "#4a6a42", wall: night ? "#7d8a72" : "#b7c6a6" }, peRoof)}
     </svg>`;
 
   const wire = (sel, tab) => {
@@ -622,6 +700,9 @@ function renderTown(t) {
   };
   wire(".house-trader", "agent");
   wire(".house-analyst", "news");
+  wire(".house-pm", "journal");
+  wire(".house-rm", "journal");
+  wire(".house-pe", "agent");
 }
 
 /* ---------------- scanner + calendar + alerts ---------------- */

@@ -68,5 +68,52 @@ class MessagesTestCase(unittest.TestCase):
         self.assertEqual([m["subject"] for m in sent], ["y"])
 
 
+class AgentStatusTestCase(unittest.TestCase):
+    """agent_status() is what the Neighborhood draws each house from."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._old_db = tracking.DB_PATH
+        tracking.DB_PATH = Path(self._tmp.name) / "s.db"
+        tracking.init()
+
+    def tearDown(self):
+        tracking.DB_PATH = self._old_db
+        self._tmp.cleanup()
+
+    def test_reports_last_scan_and_mail_count(self):
+        tracking.log_event("risk_scan", source="risk_manager", payload={"risk_level": "low"})
+        tracking.log_event("risk_scan", source="risk_manager", payload={"risk_level": "high"})
+        tracking.send_message("risk_manager", "trader", "Portfolio risk: Leverage")
+        tracking.send_message("risk_manager", "trader", "Portfolio risk: Concentration")
+
+        st = tracking.agent_status("risk_manager", "risk_scan")
+        # The newest scan wins, so the house shows current state, not history.
+        self.assertEqual(st["last_scan"]["payload"], {"risk_level": "high"})
+        self.assertEqual(st["sent_today"], 2)
+
+    def test_silent_agent_reports_no_scan(self):
+        st = tracking.agent_status("pattern_engine", "pattern_scan")
+        self.assertIsNone(st["last_scan"])
+        self.assertEqual(st["sent_today"], 0)
+
+    def test_scan_kinds_do_not_bleed_between_agents(self):
+        tracking.log_event("news_scan", source="analyst", payload={"n_headlines": 40})
+        tracking.send_message("analyst", "trader", "Market news digest")
+
+        pm = tracking.agent_status("position_manager", "position_scan")
+        self.assertIsNone(pm["last_scan"])
+        self.assertEqual(pm["sent_today"], 0)
+
+    def test_every_resident_has_a_distinct_scan_kind(self):
+        kinds = list(tracking.TOWN_RESIDENTS.values())
+        self.assertEqual(len(kinds), len(set(kinds)))
+        for agent, kind in tracking.TOWN_RESIDENTS.items():
+            tracking.log_event(kind, source=agent, payload={"agent": agent})
+        for agent, kind in tracking.TOWN_RESIDENTS.items():
+            st = tracking.agent_status(agent, kind)
+            self.assertEqual(st["last_scan"]["payload"]["agent"], agent)
+
+
 if __name__ == "__main__":
     unittest.main()

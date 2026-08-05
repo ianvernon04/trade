@@ -597,20 +597,22 @@ def news_scan_now():
 
 @app.get("/api/town/status")
 def town_status():
-    """Everything the Neighborhood needs in one local-only call."""
-    from datetime import datetime, timedelta, timezone
+    """Everything the Neighborhood needs in one local-only call.
+
+    Every agent reports the same two things — its last scan (so the house
+    knows whether it is awake and what it found) and how much mail it sent
+    the Trader today (so its mailbox flag has a count).
+    """
+    from datetime import datetime, timezone
     today = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
-    scans = tracking.list_events(kind="news_scan", limit=1)
     return {
         "trader": {
             "summary": tracking.summary(),
             "decisions": tracking.list_decisions(limit=30),
             "unread_mail": tracking.unread_count("trader"),
         },
-        "analyst": {
-            "last_scan": scans[0] if scans else None,
-            "sent_today": len(tracking.messages_sent("analyst", since=today, limit=1000)),
-        },
+        **{agent: tracking.agent_status(agent, kind, since=today)
+           for agent, kind in tracking.TOWN_RESIDENTS.items()},
     }
 
 

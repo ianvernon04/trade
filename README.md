@@ -53,7 +53,7 @@ public RSS feeds — no API keys needed).
 | Tab | What it does |
 |---|---|
 | **Dashboard** | Live watchlist (big tech + SPY/QQQ) with price, change, and a composite signal per ticker; click a row for a full **agent brief** combining signal + options read + backtest stats + scorecard + weekly-timeframe confluence + headlines + a concrete trading plan. |
-| **Neighborhood** | A drawn street where your agents live. **The Trader (№1)**: windows lit when awake, porch light follows its stance (green/red/blue), chimney smoke when active, mailbox flag up with its unread-mail count, career hit rate on the lawn plaque — click to step inside (Agent tab). **The Analyst (№2)**: rooftop antenna, a robot reading the paper in the window, porch light showing the market's news tone, mailbox counting briefings sent to the Trader today — click for headlines (Tech News tab). The sky follows your local clock — sun by day; moon, stars, and lit streetlamps at night (`?hour=12` / `?hour=22` to preview). Lot №3 stays reserved for your next agent. |
+| **Neighborhood** | A drawn street where your agents live. **The Trader (№1)**: windows lit when awake, porch light follows its stance (green/red/blue), chimney smoke when active, mailbox flag up with its unread-mail count, career hit rate on the lawn plaque — click to step inside (Agent tab). **The Analyst (№2)**: rooftop antenna, a robot reading the paper in the window, porch light showing the market's news tone, mailbox counting briefings sent to the Trader today — click for headlines (Tech News tab). Then three cottages for the junior agents, each with its own rooftop mark, a porch light coloured by what it last found, a mailbox counting today's briefings, and one live stat on the plaque: **Positions (№3)** — a watchtower cupola, "6 positions · 2 to review"; **Risk (№4)** — scales on the ridge, "Δ-1240 · high risk"; **Patterns (№5)** — a memory spire, "3 edges from 64 calls". Any house goes dark and starts snoring when its agent hasn't run recently. The sky follows your local clock — sun by day; moon, stars, and lit streetlamps at night (`?hour=12` / `?hour=22` to preview). |
 | **Agent** | The Claude agent's visible body: an avatar whose mood follows its latest stance (bullish / bearish / watching / asleep), a speech bubble with its current thinking, a live diary of every analysis, order, and fill it performs through the Robinhood MCP server, and its graded report card — hit rate, average forward return, best call — from the tracking store. |
 | **Scanner** | Morning sweep of the watchlist ranked by signal strength, fresh threshold crossings, and daily/weekly agreement (earnings drag rank down). Includes a macro calendar (FOMC/CPI) and a live **alert feed**: a background engine re-checks the watchlist and your open positions every 5 minutes and raises alerts for signal crossings, positions near expiry/earnings, and expired contracts — with optional browser/phone notifications. |
 | **Analyze** | Price chart with SMA20/50 + Bollinger bands, RSI, and the composite score history; a table explaining every indicator's vote and weight; and the **agent scorecard** — every historical crossing of the live signal on this ticker over 3 years, graded on forward returns, so you know the signal's actual win rate before trusting it. |
@@ -108,6 +108,19 @@ The repo doubles as a Claude Code agent workspace wired to Robinhood:
   (`python3 -m app inbox --agent trader --unread`), and autonomous runs
   treat a fresh high-priority alert as a reason to sit out. The Analyst
   never touches broker tools: it informs, the Trader decides.
+- **Three more agents** ride the same bus, on the same terms — analyze, mail
+  the Trader, never call a broker tool. **The Position Manager**
+  (`app/positionagent.py`, every 30 min or `python3 -m app position-scan`)
+  watches open positions for exits and rolls: profit-taking, broken theses,
+  expiry inside a week, earnings landing before expiration. **The Risk
+  Manager** (`app/riskagent.py`, hourly or `python3 -m app risk-scan`) works
+  at the portfolio level instead of the position level — net delta and theta,
+  single-ticker concentration, gross leverage, unhedged exposure. **The
+  Pattern Engine** (`app/patternagent.py`, every 4 hours or
+  `python3 -m app pattern-scan`) mines the graded decision history for
+  repeatable edge — which tickers, directions, IV regimes, and signal
+  strengths actually win — and reports once it has 20+ graded calls to
+  reason from.
 
 The console works standalone too:
 
