@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m app inbox)",
+      "Bash(python3 -m app inbox *)",
+      "Bash(python3 -m app news-scan)",
+      "Bash(python3 -m app news-scan *)",
+      "Bash(python3 -m app send *)"
+    ]
+  }
+}
