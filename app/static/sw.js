@@ -3,7 +3,7 @@
    served stale-while-revalidate: the cached copy renders immediately and a
    background fetch refreshes the cache, so UI updates land on the next
    visit without needing a cache-name bump. */
-const CACHE = "ota-v2";
+const CACHE = "ota-v3";
 const SHELL = ["/", "/static/style.css", "/static/app.js",
   "/static/manifest.webmanifest", "/static/icon-192.png", "/static/icon-512.png"];
 
