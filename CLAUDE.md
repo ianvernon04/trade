@@ -55,21 +55,50 @@ these rules in every session:
 
 ## Real-money safety rules
 
-- **Confirm before execution.** Never place, modify, or cancel a live order
-  through the MCP server without the user explicitly approving that exact
-  order (ticker, side, quantity, price/type) in this conversation — a
-  standing "trade for me" is not enough for a specific new order.
-- Respect any size/risk limits the user states; when none are stated, ask.
-- Surface the app's warnings before options trades: earnings-before-expiry
-  (IV crush), elevated IV percentile, macro events (`/api/calendar`).
+These are the specific risk rules the account owner chose after being asked
+directly (2026-08-05) — not generic best practices. Follow them exactly:
+don't loosen them because a trade "seems obviously fine," and don't add
+unrequested friction either.
+
+- **Every order needs its own explicit "yes" in this conversation before you
+  call any Robinhood order-placing tool — no exceptions.** A standing "trade
+  for me" from earlier does not count as approval for a new, specific order.
+  Ceremony scales with size:
+  - **Under $300 total premium/cost:** state the trade in one line (ticker,
+    contract, side, qty, approx cost) and get a plain yes.
+  - **$300 or more:** lay out a full order ticket first — exact contract
+    (ticker, strike, expiry, call/put, side, qty, limit/market), total cost,
+    and max loss — then get explicit approval of that ticket.
+- **No hard position-size cap is set.** Always state the size and total
+  cost/max-loss plainly as part of the confirmation above — the human
+  approval *is* the size check here, since nothing caps it automatically.
+- **Undefined-risk (naked) options are allowed.** Every time one is
+  proposed, regardless of size, state the actual worst case in plain
+  language before asking for approval:
+  - Naked short call: loss is not capped — it grows as the stock keeps
+    rising, with no ceiling.
+  - Naked short put: max loss is strike × 100 × contracts if the stock goes
+    to zero.
+  Get explicit approval of *that specific risk*, not just the trade idea.
+- **Options-specific warnings still apply no matter the ceremony tier:**
+  earnings-before-expiry (IV crush), elevated IV percentile, and upcoming
+  macro events (`/api/calendar`) — surface these before any options trade.
+- **Log the proposal, not just the fill.** The moment you state a ticket —
+  before calling the order tool — record it:
+  `python -m app log proposal --ticker X --note "<the exact ticket stated>"`.
+  That's the durable proof of what was actually proposed and approved,
+  independent of chat scrollback. Log the resulting order/fill as required
+  below once the tool returns, and link them with `--order-id` where possible.
 - Signals here are educational analytics, not financial advice; say so when
-  the stakes warrant it. Options can lose 100% of premium.
+  the stakes warrant it. Options can lose 100% of premium — naked positions
+  can lose more.
 
 ## CLI reference
 
 ```
 python -m app analyze NVDA [--options] [--weekly] [--horizon 10] [--json]
 python -m app decide --ticker NVDA --action call --price 181.2 --rationale "..." [--snapshot]
+python -m app log proposal --ticker NVDA --note "<exact order ticket stated in chat>"
 python -m app log order --ticker NVDA --source robinhood-mcp --payload '{...}' | @file | -
 python -m app ingest --payload - [--kind positions] [--source robinhood-mcp]
 python -m app evaluate [--period 1y]        # grade matured decisions
