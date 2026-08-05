@@ -65,27 +65,32 @@ def get_quote(ticker: str) -> dict:
     ticker = ticker.upper().strip()
 
     def fetch():
-        t = yf.Ticker(ticker)
-        info = t.fast_info
-        price = info.last_price
-        prev = info.previous_close
-        change = (price - prev) if (price is not None and prev) else None
-        return {
-            "ticker": ticker,
-            "price": _round(price),
-            "previous_close": _round(prev),
-            "change": _round(change),
-            "change_pct": _round(change / prev * 100) if (change is not None and prev) else None,
-            "day_high": _round(info.day_high),
-            "day_low": _round(info.day_low),
-            "open": _round(info.open),
-            "volume": info.last_volume,
-            "market_cap": getattr(info, "market_cap", None),
-            "year_high": _round(getattr(info, "year_high", None)),
-            "year_low": _round(getattr(info, "year_low", None)),
-            "currency": getattr(info, "currency", "USD"),
-            "as_of": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }
+        def once():
+            t = yf.Ticker(ticker)
+            info = t.fast_info
+            price = info.last_price
+            prev = info.previous_close
+            change = (price - prev) if (price is not None and prev) else None
+            return {
+                "ticker": ticker,
+                "price": _round(price),
+                "previous_close": _round(prev),
+                "change": _round(change),
+                "change_pct": _round(change / prev * 100) if (change is not None and prev) else None,
+                "day_high": _round(info.day_high),
+                "day_low": _round(info.day_low),
+                "open": _round(info.open),
+                "volume": info.last_volume,
+                "market_cap": getattr(info, "market_cap", None),
+                "year_high": _round(getattr(info, "year_high", None)),
+                "year_low": _round(getattr(info, "year_low", None)),
+                "currency": getattr(info, "currency", "USD"),
+                "as_of": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        # fast_info sporadically throws internal KeyErrors (e.g.
+        # 'exchangeTimezoneName') on the first call for a symbol; a quick
+        # retry clears it almost every time.
+        return _retry(once, always=True)
 
     return _cached(f"quote:{ticker}", 45, fetch)
 
@@ -102,8 +107,10 @@ def get_quotes_batch(tickers: list[str]) -> dict[str, dict]:
     key = "batch:" + ",".join(syms)
 
     def fetch():
-        df = yf.download(syms, period="5d", interval="1d", group_by="ticker",
-                         auto_adjust=True, progress=False, threads=False)
+        def once():
+            return yf.download(syms, period="5d", interval="1d", group_by="ticker",
+                               auto_adjust=True, progress=False, threads=False)
+        df = _retry(once, attempts=2, always=True)
         out: dict[str, dict] = {}
         for s in syms:
             try:
@@ -138,8 +145,17 @@ def get_quotes_batch(tickers: list[str]) -> dict[str, dict]:
     return _cached(key, 45, fetch)
 
 
-def _retry(fn, attempts: int = 3, base_delay: float = 1.5):
-    """Retry a Yahoo call with exponential backoff on transient/rate-limit errors."""
+def _retry(fn, attempts: int = 3, base_delay: float = 1.5, always: bool = False):
+    """Retry a Yahoo call with exponential backoff.
+
+    By default only retries errors that look like rate-limiting/connectivity
+    (429, "rate", timeouts, connection resets) — a real 404-style error (bad
+    ticker, no options listed) fails fast instead of retrying pointlessly.
+    ``always=True`` retries on any exception; use it for calls like
+    ``fast_info`` where yfinance throws sporadic internal errors (e.g. a
+    missing ``exchangeTimezoneName`` key) that have nothing to do with
+    rate-limit wording but reliably clear within a couple of attempts.
+    """
     last = None
     for i in range(attempts):
         try:
@@ -147,7 +163,7 @@ def _retry(fn, attempts: int = 3, base_delay: float = 1.5):
         except Exception as e:
             last = e
             msg = str(e).lower()
-            transient = ("429" in msg or "rate" in msg or "timed out" in msg
+            transient = always or ("429" in msg or "rate" in msg or "timed out" in msg
                          or "timeout" in msg or "connection" in msg or "curl" in msg)
             if not transient or i == attempts - 1:
                 raise
