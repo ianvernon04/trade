@@ -3,3 +3,6 @@ __pycache__/
 journal.db
 .venv/
 venv/
+autotrade.log
+cron-stderr.log
+.autotrade.lock/
