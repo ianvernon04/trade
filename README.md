@@ -69,7 +69,12 @@ The repo doubles as a Claude Code agent workspace wired to Robinhood:
   but project-scoped so it travels with the repo.)
 - **`CLAUDE.md`** tells every Claude session how to behave: analyze with the
   app's indicators before recommending, log every broker action, never place
-  an order without your explicit confirmation.
+  an order without your explicit confirmation. Its **real-money safety
+  rules** encode the actual risk parameters you set — confirmation ceremony
+  by order size, position-size limits (or lack thereof), and whether
+  undefined-risk (naked) options are allowed — so every session follows the
+  same rules instead of improvising them. Edit that section directly to
+  change your limits.
 - **Agent tracking** (`app/tracking.py`) records what the agent does in two
   tables inside `journal.db`: `agent_events` (orders, fills, positions, data
   pulls — raw payloads preserved) and `agent_decisions` (every
