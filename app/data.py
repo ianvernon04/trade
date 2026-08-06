@@ -21,10 +21,24 @@ import yfinance as yf
 # we handle failures ourselves, so keep its console output quiet.
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
-# Default watchlist: large-cap / high-volume technology names with liquid options.
+# Default watchlist: liquid, optionable names across a spread of share prices.
+#
+# The price spread is the point, not incidental. Every original member trades
+# between roughly $150 and $500, where a near-the-money six-week call costs
+# $800–2,000. Against a $300 per-trade max-loss cap the gate therefore denied
+# every option it ever priced, and the only contracts that fit were far
+# out-of-the-money lottery tickets at ~15% chance of profit — a worse trade,
+# not a cheaper one.
+#
+# The lower-priced names below carry near-the-money contracts in the $50–200
+# range, so a real position fits inside the existing cap. Widening the price
+# range is what makes options reachable; loosening the risk limit is not.
 DEFAULT_WATCHLIST = [
+    # large caps — high quality, options mostly priced beyond the cap
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
     "AMD", "AVGO", "PLTR", "QQQ", "SPY",
+    # lower-priced, liquid, optionable — where affordable contracts live
+    "INTC", "SOFI", "F", "RIVN", "IWM",
 ]
 
 # ETFs have no earnings reports — never ask Yahoo for their earnings dates.
