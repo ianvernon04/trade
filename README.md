@@ -121,6 +121,20 @@ The repo doubles as a Claude Code agent workspace wired to Robinhood:
   repeatable edge — which tickers, directions, IV regimes, and signal
   strengths actually win — and reports once it has 20+ graded calls to
   reason from.
+- **Where the position agents get the account** (`app/portfolio.py`): from the
+  broker, not the Journal. Whenever a Claude session pulls positions from the
+  Robinhood MCP server and records them with `python3 -m app ingest`, that
+  snapshot becomes the book those two agents reason over — so they work for
+  someone who never opens the Journal tab. They then gather every other input
+  themselves: live quotes, option marks, greeks, days to expiry, earnings
+  dates. The agents can't call Robinhood directly (they're background threads
+  in the web server; MCP tools live in a Claude session), so a session
+  refreshing that snapshot is what keeps them current. Crucially they
+  distinguish **an empty book from an unseen one**: with no snapshot they
+  report *blind* and alert the Trader instead of quietly reporting "no
+  positions", and a snapshot over 12 h old is labelled stale. A position whose
+  option chain won't load is counted as *unpriced* and named, so a theta or
+  delta total never silently omits real exposure.
 
 The console works standalone too:
 

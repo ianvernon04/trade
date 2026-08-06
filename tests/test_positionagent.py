@@ -96,6 +96,71 @@ class TestComposeMessages(unittest.TestCase):
         self.assertTrue(any(m["priority"] == "high" for m in earn_msgs))
 
 
+class TestUnpricedPositions(unittest.TestCase):
+    """"$0/day theta" must never be how "we couldn't price it" renders."""
+
+    def test_unpriced_positions_are_counted_not_treated_as_zero_decay(self):
+        a = positionagent.analyze_positions([
+            p("AAPL", theta_per_day=0.0),
+            p("NVDA", instrument="call", theta_per_day=None),
+            p("AMD", instrument="put", theta_per_day=None),
+        ])
+        self.assertEqual(a["unpriced"], 2)
+        self.assertEqual(a["unpriced_tickers"], ["AMD", "NVDA"])
+
+    def test_unpriced_raises_a_high_priority_alert(self):
+        msgs = positionagent.compose_messages({
+            "blind": False, "n_positions": 3, "theta_sum": 0.0, "unpriced": 2,
+            "unpriced_tickers": ["AMD", "NVDA"], "source": "robinhood-mcp",
+            "actions": [], "dte_warns": [], "earnings_warns": []})
+        alert = next(m for m in msgs if m["priority"] == "high")
+        self.assertIn("priced", alert["subject"].lower())
+        self.assertIn("understates", alert["body"])
+
+    def test_fully_priced_book_raises_no_such_alert(self):
+        msgs = positionagent.compose_messages({
+            "blind": False, "n_positions": 1, "theta_sum": -18.0, "unpriced": 0,
+            "unpriced_tickers": [], "source": "robinhood-mcp",
+            "actions": [], "dte_warns": [], "earnings_warns": []})
+        self.assertFalse(any("priced" in m["subject"].lower() for m in msgs))
+
+
+class TestBlindAndStale(unittest.TestCase):
+    """No broker snapshot must never be reported as a quiet, empty book."""
+
+    def test_blind_book_produces_one_high_priority_alert(self):
+        msgs = positionagent.compose_messages(
+            {"blind": True, "unreadable": 2, "n_positions": 0, "theta_sum": 0,
+             "actions": [], "dte_warns": [], "earnings_warns": []})
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(msgs[0]["priority"], "high")
+        self.assertIn("blind", msgs[0]["subject"].lower())
+        # It must tell the Trader how to fix it, not just complain.
+        self.assertIn("ingest", msgs[0]["body"])
+
+    def test_blind_suppresses_the_reassuring_summary(self):
+        msgs = positionagent.compose_messages(
+            {"blind": True, "unreadable": 0, "n_positions": 0, "theta_sum": 0,
+             "actions": [], "dte_warns": [], "earnings_warns": []})
+        self.assertFalse(any("Portfolio:" in m["subject"] for m in msgs))
+
+    def test_genuinely_flat_book_is_quiet(self):
+        # Seeing the account and finding nothing in it is not an alert.
+        msgs = positionagent.compose_messages(
+            {"blind": False, "n_positions": 0, "theta_sum": 0, "source": "robinhood-mcp",
+             "actions": [], "dte_warns": [], "earnings_warns": []})
+        self.assertEqual([m for m in msgs if m["priority"] == "high"], [])
+
+    def test_stale_snapshot_alerts_but_still_reports(self):
+        msgs = positionagent.compose_messages(
+            {"blind": False, "stale": True, "age_hours": 52.0, "as_of": "2026-08-03T08:00:00Z",
+             "n_positions": 3, "theta_sum": 20, "source": "robinhood-mcp",
+             "actions": [], "dte_warns": [], "earnings_warns": []})
+        self.assertTrue(any(m["priority"] == "high" and "stale" in m["subject"].lower()
+                            for m in msgs))
+        self.assertTrue(any("Portfolio:" in m["subject"] for m in msgs))
+
+
 class TestRunScan(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -107,16 +172,30 @@ class TestRunScan(unittest.TestCase):
         tracking.DB_PATH = self._old_db
         self._tmp.cleanup()
 
-    def test_scan_logs_event_and_delivers_mail(self):
-        # Mock positions for testing (run_scan tries to fetch from journal, which is empty,
-        # so this mainly tests the logging/message flow).
-        res = positionagent.run_scan(send=True)
+    BOOK = {"source": "robinhood-mcp", "blind": False, "stale": False,
+            "as_of": "2026-08-05T12:00:00Z", "age_hours": 0.5, "unreadable": 0,
+            "totals": {"delta_shares": 110.0, "theta_per_day": -18.0},
+            "positions": [p("NVDA", instrument="call", strike=185, dte=44,
+                            unrealized_pnl_pct=38.6, theta_per_day=-18.0)]}
+
+    def test_scan_logs_event_and_records_its_source(self):
+        positionagent.run_scan(send=True, book=self.BOOK)
         events = tracking.list_events(kind="position_scan")
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["source"], "position_manager")
+        self.assertEqual(events[0]["payload"]["source"], "robinhood-mcp")
+        self.assertEqual(events[0]["payload"]["n_positions"], 1)
+
+    def test_blind_scan_mails_the_trader_a_high_priority_alert(self):
+        res = positionagent.run_scan(
+            send=True, book={"source": "none", "blind": True, "positions": [],
+                             "totals": {}, "unreadable": 0})
+        self.assertTrue(any(m["priority"] == "high" for m in res["delivered"]))
+        unread = tracking.inbox("trader", unread_only=True)
+        self.assertTrue(any("blind" in m["subject"].lower() for m in unread))
 
     def test_no_send_mode(self):
-        res = positionagent.run_scan(send=False)
+        res = positionagent.run_scan(send=False, book=self.BOOK)
         self.assertEqual(res["delivered"], [])
         self.assertEqual(len(tracking.list_events(kind="position_scan")), 1)
 

@@ -56,6 +56,17 @@ Five agents share this repo, one brain each, talking over the message bus:
   leverage, unhedged exposures, and single-ticker dominance that could blow
   up the account in a tail move. Runs every 60 minutes or on demand with
   `python3 -m app risk-scan`.
+
+  **Both read the broker, not the Journal** (`app/portfolio.py`): the
+  positions the Trader pulls from the Robinhood MCP server and stores with
+  `ingest`. That makes them useful to an owner who never opens the Journal
+  tab — but it also means **they are only as current as your last ingest**,
+  which is the Trader's job (see rule 2 below). With no snapshot they report
+  *blind* and refuse to say anything else; they never present an unknown book
+  as a flat one, and never emit a "low risk" verdict over holdings they
+  cannot see. Same rule one level down: a position whose chain won't load is
+  counted as `unpriced` and named, because a theta total that silently omits
+  a leg understates the book.
 - **The Pattern Engine** (`pattern_engine`, `app/patternagent.py`) — mines
   your decision history (`agent_decisions` table) to extract high-confidence
   repeating patterns: tickers you win on, directions/strategies with higher
@@ -80,21 +91,41 @@ these rules in every session:
    weigh what the Analyst has flagged, then mark it read (`--mark-read`).
    Unread high-priority alerts are context the account owner expects you to
    have; don't recommend around them.
-2. **Before any recommendation or trade:** `python3 -m app analyze TICKER`
+2. **Refresh the broker snapshot — this is what keeps two agents alive.**
+   Early in the session, pull positions from the Robinhood MCP server and
+   record them:
+
+   ```
+   python3 -m app ingest --payload '-'   # pipe the positions tool result
+   ```
+
+   The Position Manager and Risk Manager read *only* this (`app/portfolio.py`),
+   because the Journal is hand-kept data the owner may never touch. You are
+   the only component that can reach the broker — the agents are daemon
+   threads inside the web server and have no MCP access at all. Skip this and
+   they correctly report themselves **blind** and go quiet: no exit warnings,
+   no expiry warnings, no risk read. A snapshot older than 12 h is flagged
+   stale, and everything computed from it is labelled as such. If the MCP
+   tools are unavailable or unauthenticated, log that as a note and say so
+   plainly rather than letting the agents look merely idle.
+3. **Before any recommendation or trade:** `python3 -m app analyze TICKER`
    (add `--options --weekly` for conviction checks). This records the
    decision with its full signal snapshot automatically. Use
    `--no-record` only for idle exploration.
-3. **Every state-changing broker action** (order placed / modified /
+4. **Every state-changing broker action** (order placed / modified /
    cancelled via MCP) must be logged the moment the tool returns:
    `python3 -m app log order --ticker X --source robinhood-mcp --payload '<tool result JSON>'`
-4. **Bulk MCP data** (orders, fills, positions, portfolio) goes through
+5. **Bulk MCP data** (orders, fills, positions, portfolio) goes through
    `python3 -m app ingest --payload '-'` (pipe the tool result via stdin) —
    it normalizes recognizable shapes and always preserves the raw payload.
-5. **Link executions to reasoning:** when an order fills, record or update the
+   **Always pipe the real payload, never a hand-written `log position --note`:**
+   a position event with no payload is unreadable to the agents, and they
+   count it as blindness rather than guessing at what you held.
+6. **Link executions to reasoning:** when an order fills, record or update the
    decision with `--order-id` so fills trace back to the signal that caused them.
-6. **Never invent data.** Log only what tools actually returned. If a call
+7. **Never invent data.** Log only what tools actually returned. If a call
    failed, that's an event too (`python3 -m app log note --note "..."`).
-7. **Manual trades the user mentions** belong in the tracking store as well
+8. **Manual trades the user mentions** belong in the tracking store as well
    (`decide` + `log`), so the dataset covers everything, not just agent acts.
 
 ## Real-money safety rules
