@@ -86,14 +86,49 @@ class TestComposeMessages(unittest.TestCase):
         expiry_msgs = [m for m in msgs if "expiry" in m.get("subject", "").lower()]
         self.assertGreater(len(expiry_msgs), 0)
 
-    def test_earnings_warning_message_is_high_priority(self):
-        pos = p("AMD", earnings_in_days=3)
+    def test_option_earnings_warning_message_is_high_priority(self):
+        pos = p("AMD", instrument="call", strike=100, dte=10, earnings_in_days=3)
         a = {"n_positions": 1, "theta_sum": 10.0,
              "dte_warns": [], "earnings_warns": [("AMD", 3, pos)],
              "actions": []}
         msgs = positionagent.compose_messages(a)
         earn_msgs = [m for m in msgs if "earnings" in m.get("subject", "").lower()]
         self.assertTrue(any(m["priority"] == "high" for m in earn_msgs))
+        self.assertTrue(any("IV crush" in m["body"] for m in earn_msgs))
+
+    def test_stock_earnings_warning_does_not_claim_iv_crush(self):
+        """Shares have no premium to crush and no expiry to race.
+
+        The single combined alert told a plain share lot to "close before
+        the report" over decay that cannot touch it.
+        """
+        pos = p("ZZTOP", earnings_in_days=4)  # instrument defaults to stock
+        a = {"n_positions": 1, "theta_sum": 0.0,
+             "dte_warns": [], "earnings_warns": [("ZZTOP", 4, pos)],
+             "actions": []}
+        msgs = positionagent.compose_messages(a)
+        earn_msgs = [m for m in msgs if "earnings" in m.get("subject", "").lower()]
+        self.assertEqual(len(earn_msgs), 1)
+        body = earn_msgs[0]["body"]
+        self.assertNotIn("IV crush", body)
+        self.assertNotIn("expiration", body)
+        self.assertIn("gap", body)
+        self.assertEqual(earn_msgs[0]["priority"], "normal")
+
+    def test_mixed_earnings_warnings_split_into_two_messages(self):
+        call = p("AMD", instrument="call", strike=100, dte=10, earnings_in_days=3)
+        stock = p("ZZTOP", earnings_in_days=4)
+        a = {"n_positions": 2, "theta_sum": 0.0, "dte_warns": [],
+             "earnings_warns": [("AMD", 3, call), ("ZZTOP", 4, stock)],
+             "actions": []}
+        msgs = positionagent.compose_messages(a)
+        earn_msgs = [m for m in msgs if "earnings" in m.get("subject", "").lower()]
+        self.assertEqual(len(earn_msgs), 2)
+        by_pri = {m["priority"]: m for m in earn_msgs}
+        self.assertIn("AMD", by_pri["high"]["body"])
+        self.assertNotIn("ZZTOP", by_pri["high"]["body"])
+        self.assertIn("ZZTOP", by_pri["normal"]["body"])
+        self.assertNotIn("AMD", by_pri["normal"]["body"])
 
 
 class TestUnpricedPositions(unittest.TestCase):

@@ -201,16 +201,41 @@ def compose_messages(a: dict, user_id: int | None = None) -> list[dict]:
             "payload": {"dte_warns": a["dte_warns"]}, "dedupe_hours": 12,
         })
 
-    # Aggregate earnings warnings.
-    if a["earnings_warns"]:
-        earn_list = ", ".join(f"{t} in {d}d" for t, d, _ in a["earnings_warns"])
+    # Aggregate earnings warnings, split by what the position actually is.
+    #
+    # Earnings threatens an option and a share lot in different ways, and one
+    # message cannot describe both honestly: IV crush needs an implied vol to
+    # collapse and an expiry to race, neither of which a share lot has. Sent
+    # as one alert, a plain stock holding was told to "close before the
+    # report" because of decay that does not apply to it — advice that reads
+    # as urgent and is simply wrong. Shares only carry gap risk, so they get
+    # the milder wording and the briefing channel, which keeps a high-priority
+    # alert meaning what it says.
+    opt_warns = [w for w in a["earnings_warns"]
+                 if (w[2] or {}).get("instrument") in ("call", "put")]
+    stock_warns = [w for w in a["earnings_warns"] if w not in opt_warns]
+
+    if opt_warns:
+        earn_list = ", ".join(f"{t} in {d}d" for t, d, _ in opt_warns)
         msgs.append({
             "kind": "alert", "priority": "high",
             "subject": "Earnings before expiry — IV crush risk",
             "body": f"Earnings dates landing before your option expirations: {earn_list}. "
                     "IV crush will erode your position after earnings. "
                     "Close before the report unless earnings is your thesis.",
-            "payload": {"earnings_warns": a["earnings_warns"]}, "dedupe_hours": 24,
+            "payload": {"earnings_warns": opt_warns}, "dedupe_hours": 24,
+        })
+
+    if stock_warns:
+        earn_list = ", ".join(f"{t} in {d}d" for t, d, _ in stock_warns)
+        msgs.append({
+            "kind": "briefing", "priority": "normal",
+            "subject": "Earnings ahead on stock you hold",
+            "body": f"Earnings reports due on shares you hold: {earn_list}. "
+                    "Shares have no expiry and no premium to crush, so there is "
+                    "nothing decaying — the risk is a gap on the print. Size the "
+                    "position so an overnight move against you is survivable.",
+            "payload": {"earnings_warns": stock_warns}, "dedupe_hours": 24,
         })
 
     # Positions we hold but couldn't price: exposure without a read on it.
