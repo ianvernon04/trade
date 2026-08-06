@@ -217,12 +217,27 @@ above instead; autonomous mode is the exception, not the default.
    hit rate under 40%, stop — log a note explaining why and place no trades
    this run. A cold streak is exactly when autonomous size should shrink to
    zero, not when it should keep firing.
-2. **Read the inbox:** `python3 -m app inbox --agent trader --unread`. A
-   high-priority Analyst alert from the last 12 hours (macro risk or a
-   negative cluster on the candidate ticker) means **no new positions this
-   run** — log a note naming the alert and stop. With nobody watching, news
-   risk is a reason to sit out, never a judgment call to trade through.
-   Mark the mail read once processed.
+2. **Check for standing risk, then read the mail — in that order:**
+
+   ```
+   python3 -m app alerts --agent trader --hours 12 --from analyst
+   ```
+
+   Exit 0 = clear, **exit 1 = no new positions this run**: log a note naming
+   the alerts and stop. With nobody watching, news risk is a reason to sit
+   out, never a judgment call to trade through.
+
+   **This is the gate, not `inbox --unread`.** The rule is about alerts
+   landing inside a 12-hour window, and `--unread` answers a different
+   question — the two agree only until something marks the mail read, which
+   this routine does on every run. A second run half an hour later then saw
+   an empty inbox and would have traded through macro risk the first run
+   correctly refused. Marking a warning read does not make the tariffs stop,
+   so the gate is deliberately blind to the read flag.
+
+   Then read the mail normally for context
+   (`python3 -m app inbox --agent trader --unread`) and mark it read once
+   processed. Reading it is for judgment; the exit code above is what binds.
 3. `python3 -m app scan` (or `GET /api/scan` if the server's up) to rank
    today's setups.
 4. **Entry-quality bar** — a setup may be considered only if *all* hold:
@@ -346,6 +361,7 @@ python3 -m app position-scan [--user-id N] [--no-send]  # Position Manager: posi
 python3 -m app risk-scan [--no-send]         # Risk Manager: portfolio Greeks → risk alerts
 python3 -m app pattern-scan [--no-send]      # Pattern Engine: decision history → profitable patterns
 python3 -m app inbox [--agent trader] [--unread] [--mark-read]
+python3 -m app alerts [--agent trader] [--hours 12] [--from analyst]  # exit 1 = standing risk
 python3 -m app send --from analyst --to trader --subject "..." [--body ...] [--priority high]
 python3 -m app scan [--tickers AAPL,MSFT,...] [--json]  # rank today's setups (autonomous mode)
 python3 -m app evaluate [--period 1y]        # grade matured decisions

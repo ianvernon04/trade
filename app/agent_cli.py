@@ -372,6 +372,34 @@ def cmd_inbox(args) -> int:
     return 0
 
 
+def cmd_alerts(args) -> int:
+    """Is there live high-priority risk in the window? Exit 1 = yes, stand down.
+
+    Deliberately a separate command from `inbox`, and deliberately exit-coded
+    like `autonomy check`: an unattended run must not be able to satisfy this
+    check by having already read the mail.
+    """
+    rows = tracking.standing_alerts(args.agent, hours=args.hours,
+                                    priority=args.priority,
+                                    from_agent=args.from_agent)
+
+    def human(ms):
+        if not ms:
+            print(f"CLEAR — no {args.priority}-priority alert for '{args.agent}' "
+                  f"in the last {args.hours}h"
+                  + (f" from {args.from_agent}" if args.from_agent else "") + ".")
+            return
+        print(f"STANDING RISK — {len(ms)} {args.priority}-priority alert(s) "
+              f"in the last {args.hours}h:")
+        for m in ms:
+            state = "unread" if m["read_at"] is None else "read"
+            print(f"  {m['ts'][:16]} from {m['from_agent']} ({state}): {m['subject']}")
+        print("Read state is irrelevant here — the risk window is what counts.")
+
+    _out(rows, args.json, human)
+    return 1 if rows else 0
+
+
 def cmd_send(args) -> int:
     m = tracking.send_message(
         args.from_agent, args.to, args.subject, body=args.body, kind=args.kind,
@@ -677,6 +705,16 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--limit", type=int, default=25)
     jflag(sp)
     sp.set_defaults(fn=cmd_inbox)
+
+    sp = sub.add_parser("alerts", help="standing high-priority risk in a time "
+                                       "window, read or not (exit 1 = stand down)")
+    sp.add_argument("--agent", default="trader")
+    sp.add_argument("--hours", type=int, default=12)
+    sp.add_argument("--priority", default="high")
+    sp.add_argument("--from", dest="from_agent",
+                    help="only alerts from this agent, e.g. analyst")
+    jflag(sp)
+    sp.set_defaults(fn=cmd_alerts)
 
     sp = sub.add_parser("send", help="send a message between agents")
     sp.add_argument("--from", dest="from_agent", required=True, help="sender agent id")

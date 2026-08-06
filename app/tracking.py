@@ -406,6 +406,37 @@ def inbox(to_agent: str, unread_only: bool = False, limit: int = 100) -> list[di
     return rows
 
 
+def standing_alerts(to_agent: str, hours: int = 12, priority: str = "high",
+                    from_agent: str | None = None, now: str | None = None) -> list[dict]:
+    """High-priority mail from the last `hours`, **read or not**.
+
+    The autonomous routine blocks new positions when a high-priority Analyst
+    alert landed inside a 12-hour window. Reading the inbox with
+    ``--unread`` answers a different question — "is there mail I haven't
+    seen?" — and the two diverge the moment any run marks the mail read.
+    A second run half an hour later then sees an empty inbox and trades
+    through macro risk the first run correctly refused, because marking a
+    warning read does not make the tariffs stop.
+
+    So the gate has to ask about the window, not the read flag. This is
+    deliberately blind to `read_at`.
+    """
+    cutoff = (datetime.strptime(now or _now(), "%Y-%m-%dT%H:%M:%SZ")
+              - timedelta(hours=max(0, int(hours)))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    q = ("SELECT * FROM agent_messages WHERE to_agent = ? AND priority = ? "
+         "AND ts >= ?")
+    args: list = [to_agent, priority, cutoff]
+    if from_agent:
+        q += " AND from_agent = ?"
+        args.append(from_agent)
+    q += " ORDER BY ts DESC, id DESC"
+    with _conn() as c:
+        rows = [dict(r) for r in c.execute(q, args).fetchall()]
+    for r in rows:
+        r["payload"] = _load(r["payload"])
+    return rows
+
+
 def unread_count(to_agent: str) -> int:
     with _conn() as c:
         return c.execute("SELECT COUNT(*) FROM agent_messages WHERE to_agent = ? "
