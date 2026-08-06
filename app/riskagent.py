@@ -191,10 +191,30 @@ def run_scan(send: bool = True) -> dict:
         except Exception:
             pass  # fail soft
 
+    # Same fallback as the Position Manager: an empty journal does not mean an
+    # empty account. Reporting LOW risk off zero rows is the worst failure this
+    # agent has — a green light from a gauge that is not connected.
+    #
+    # Fallback rather than merge, so a position held in both sources is not
+    # double-counted into twice its real delta.
+    source = "journal"
+    if not all_positions:
+        try:
+            snap = positions.broker_positions()
+            if snap.get("positions"):
+                all_positions = snap["positions"]
+                all_totals = snap.get("totals") or all_totals
+                source = snap.get("source", "tracking-store")
+                if snap.get("stale"):
+                    source += f" — STALE, {snap.get('age_hours')}h old"
+        except Exception:
+            pass
+
     if all_totals is None:
         all_totals = {"delta_shares": 0, "theta_per_day": 0}
 
     a = analyze_portfolio(all_totals, all_positions)
+    a["source"] = source
     tracking.log_event(
         "risk_scan", source=AGENT_ID,
         note=(f"Portfolio Greeks: Δ{a['net_delta']:+.0f}, Θ${a['net_theta']:+.0f}/day, {a['risk_level']} risk; "

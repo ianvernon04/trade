@@ -107,14 +107,21 @@ def compose_messages(a: dict, user_id: int | None = None) -> list[dict]:
     msgs = []
 
     for act in a["actions"]:
-        if act["type"] == "take_profit":
+        # analyze_positions emits two shapes: specific actions carrying a
+        # "type" (take_profit / reversal), and generic monitoring rows that
+        # only carry "alerts". Indexing act["type"] raised KeyError on the
+        # generic shape — unreachable while the journal was empty, and an
+        # immediate crash the first time a real position produced a plain
+        # expiry or earnings warning. Generic rows are intentionally silent
+        # here; the aggregate expiry/earnings sections below cover them.
+        if act.get("type") == "take_profit":
             msgs.append({
                 "kind": "briefing", "priority": "normal", "ticker": act["ticker"],
                 "subject": f"Position P&L: {act['ticker']} up {act['pnl_pct']:.0f}%",
                 "body": (f"{act['note']}. Consider locking in the win before expiry/earnings decay it away."),
                 "payload": act, "dedupe_hours": 6,
             })
-        elif act["type"] == "reversal":
+        elif act.get("type") == "reversal":
             msgs.append({
                 "kind": "alert", "priority": "high", "ticker": act["ticker"],
                 "subject": f"Position reversal risk: {act['ticker']} {act['pnl_pct']:.0f}%",
@@ -181,7 +188,28 @@ def run_scan(user_id: int | None = None, send: bool = True) -> dict:
         except Exception:
             pass  # fail soft; next cycle retries
 
+    # The journal is the human's hand-kept log and is usually empty when the
+    # account is traded through the broker instead. Fall back to the ingested
+    # broker snapshot so this agent watches the real account rather than
+    # reporting "0 positions" — which reads as "nothing at risk" when it
+    # actually means "nothing visible".
+    #
+    # Fallback, not merge: the same contract present in both sources would be
+    # counted twice, doubling theta and delta.
+    broker_note = None
+    if not all_positions:
+        try:
+            snap = positions.broker_positions()
+            all_positions = snap.get("positions", [])
+            if all_positions:
+                broker_note = snap.get("source")
+                if snap.get("stale"):
+                    broker_note += f" — STALE, {snap.get('age_hours')}h old"
+        except Exception:
+            pass
+
     a = analyze_positions(all_positions)
+    a["source"] = broker_note or "journal"
     tracking.log_event(
         "position_scan", source=AGENT_ID,
         note=(f"{a['n_positions']} open position(s) scanned; "

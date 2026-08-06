@@ -34,14 +34,174 @@ def _mark_option(trade: dict) -> dict | None:
         return None
 
 
+def _trade_rows_from_tracking() -> list[dict]:
+    """Reconstruct open positions from the newest ingested broker snapshot.
+
+    The Position and Risk Managers used to read only `journal.trades` — the
+    human's hand-kept log. An account traded through Robinhood never appears
+    there, so both agents reported "0 positions / LOW risk" while real money
+    was at risk. That is the dangerous direction for a risk gauge: silence
+    reads as safety.
+
+    `python3 -m app ingest` already stores broker positions as `position`
+    events with the raw payload preserved, so the snapshot is here — it just
+    was not wired up. Events are newest-first, so the first row seen for a
+    contract wins and older snapshots of the same contract are skipped.
+
+    Quantity 0 means closed: brokers keep returning closed contracts for a
+    while, and counting them would resurrect positions that no longer exist.
+    """
+    from . import tracking
+
+    events = [e for e in tracking.list_events(kind="position", limit=5000)
+              if isinstance(e.get("payload"), dict)]
+
+    # Snapshot semantics, not per-contract merge. Merging by contract cannot
+    # express "this position is gone": a closed contract often disappears from
+    # the broker's list entirely, or comes back stripped of strike/expiry, so
+    # there is no newer row to overwrite the old one and a dead position lives
+    # forever. Taking only the newest batch per asset class means anything
+    # absent from that batch is correctly treated as closed.
+    #
+    # Options and equities are tracked separately because they arrive from
+    # different calls and one is often re-ingested without the other.
+    def _cls(p: dict) -> str:
+        return "option" if (p.get("option_type") or p.get("strike_price")
+                            or p.get("expiration_date")) else "stock"
+
+    def _ts(e: dict) -> datetime | None:
+        try:
+            return datetime.fromisoformat(str(e["ts"]).replace("Z", "+00:00"))
+        except (KeyError, ValueError, TypeError):
+            return None
+
+    # A single ingest writes its rows over a second or two, so the batch is a
+    # short window around the newest event rather than one exact timestamp.
+    BATCH_WINDOW_S = 120
+    newest: dict[str, datetime] = {}
+    for e in events:                                   # newest-first
+        c = _cls(e["payload"])
+        t = _ts(e)
+        if t and c not in newest:
+            newest[c] = t
+
+    latest: dict[tuple, dict] = {}
+    for e in events:
+        p = e["payload"]
+        c, t = _cls(p), _ts(e)
+        if t is None or c not in newest:
+            continue
+        if (newest[c] - t).total_seconds() > BATCH_WINDOW_S:
+            continue                                   # older snapshot, ignore
+        symbol = str(p.get("symbol") or p.get("chain_symbol") or e.get("ticker") or "").upper()
+        if not symbol:
+            continue
+        opt = str(p.get("option_type") or "").lower()
+        key = (symbol, opt, str(p.get("strike_price") or ""), str(p.get("expiration_date") or ""))
+        latest.setdefault(key, p)
+
+    rows = []
+    for (symbol, opt, strike, expiry), p in latest.items():
+        try:
+            qty = float(p.get("quantity") or 0)
+        except (TypeError, ValueError):
+            continue
+        if qty == 0:
+            continue
+
+        instrument = opt if opt in ("call", "put") else "stock"
+        # Option average_price is per contract; journal entry_price is per
+        # share. Dividing by the multiplier keeps both on the same scale, so
+        # the shared P&L maths below stays correct for either source.
+        if instrument == "stock":
+            entry = p.get("average_buy_price") or p.get("average_price")
+            mult = 1.0
+        else:
+            entry = p.get("average_price")
+            try:
+                mult = float(p.get("trade_value_multiplier") or 100) or 100.0
+            except (TypeError, ValueError):
+                mult = 100.0
+        try:
+            entry_price = float(entry) / mult if entry is not None else None
+        except (TypeError, ValueError):
+            entry_price = None
+        if entry_price is None:
+            continue
+
+        rows.append({
+            "id": f"rh:{symbol}:{instrument}:{strike or '-'}:{expiry or '-'}",
+            "ticker": symbol,
+            "instrument": instrument,
+            "direction": "short" if str(p.get("type") or "long").lower() == "short" else "long",
+            "quantity": abs(qty),
+            "strike": float(strike) if strike else None,
+            "expiry": expiry or None,
+            "entry_price": entry_price,
+            "entry_date": str(p.get("opened_at") or "")[:10] or None,
+        })
+    return rows
+
+
+STALE_AFTER_HOURS = 12
+
+
+def broker_positions() -> dict:
+    """Live-marked positions from the latest ingested broker snapshot.
+
+    Marks are live, but the *set of positions* is only as fresh as the last
+    ingest. A contract closed since then still appears here. The staleness is
+    reported rather than hidden: an agent that silently trusts an old snapshot
+    is worse than one that says it does not know.
+    """
+    from . import tracking
+
+    rows = _trade_rows_from_tracking()
+    out = _mark_trades(rows)
+    out["source"] = "tracking-store (ingested broker snapshot)"
+
+    events = tracking.list_events(kind="position", limit=1)
+    as_of = events[0]["ts"] if events else None
+    out["as_of"] = as_of
+    out["stale"] = False
+    if as_of:
+        try:
+            seen = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+            age_h = (datetime.now(timezone.utc) - seen).total_seconds() / 3600
+            out["age_hours"] = round(age_h, 1)
+            if age_h > STALE_AFTER_HOURS:
+                out["stale"] = True
+                out["warnings"].insert(0, (
+                    f"snapshot is {age_h:.0f}h old — positions closed since then still "
+                    "appear, and new ones are missing. Re-run `ingest` before trusting this."))
+        except ValueError:
+            pass
+    elif rows:
+        out["warnings"].insert(0, "snapshot age unknown")
+    return out
+
+
 def live_positions(user_id: int) -> dict:
+    """Live-marked positions from the human's journal."""
+    out = _mark_trades(journal.list_trades(user_id, "open"))
+    out["source"] = "journal"
+    return out
+
+
+def _mark_trades(trade_rows: list[dict]) -> dict:
+    """Mark a batch of position rows to market and roll up portfolio greeks.
+
+    Shared by both sources so the journal and the broker snapshot are valued
+    by identical logic — a divergence here would make the two disagree about
+    the same position.
+    """
     positions = []
     totals = {"cost_basis": 0.0, "market_value": 0.0, "unrealized_pnl": 0.0,
               "delta_shares": 0.0, "theta_per_day": 0.0}
     warnings = []
     today = date.today()
 
-    for t in journal.list_trades(user_id, "open"):
+    for t in trade_rows:
         sign = 1 if t["direction"] == "long" else -1
         mult = journal.MULT.get(t["instrument"], 100)
         entry_cost = t["entry_price"] * t["quantity"] * mult
