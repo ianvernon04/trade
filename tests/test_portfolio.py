@@ -185,6 +185,28 @@ class TestCurrent(unittest.TestCase):
         self.assertFalse(cur["blind"])
         self.assertEqual({p["ticker"] for p in cur["positions"]}, {"NVDA", "AAPL"})
 
+    def test_nested_mcp_envelope_becomes_the_book(self):
+        """The real tool shape is {"data": {"positions": [...]}}.
+
+        Unwrapping only one level stored the envelope as a single
+        unreadable event, which reads as blindness — so piping a tool
+        result verbatim, as the tracking discipline instructs, silently
+        cost the Position and Risk Managers their view of the book.
+        """
+        tracking.ingest({"data": {"positions": [RH_CALL, RH_STOCK]}},
+                        source="robinhood-mcp")
+        cur = portfolio.current(enrich_rows=False)
+        self.assertFalse(cur["blind"])
+        self.assertEqual(cur["unreadable"], 0)
+        self.assertEqual({p["ticker"] for p in cur["positions"]}, {"NVDA", "AAPL"})
+
+    def test_nested_envelope_keeps_the_contents_kind(self):
+        """'data' is transport; 'positions' is what the rows actually are."""
+        res = tracking.ingest({"data": {"positions": [RH_STOCK]}},
+                              source="robinhood-mcp")
+        self.assertEqual(res["stored"], 1)
+        self.assertEqual(list(res["kinds"]), ["position"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -532,13 +532,40 @@ def _classify(item: Any, kind_hint: str | None) -> tuple[str, str | None, str | 
     return (kind, ticker, " ".join(str(b) for b in bits) or None)
 
 
+def _unwrap(payload: Any, kind_hint: str | None,
+            _depth: int = 0) -> tuple[list | None, str | None]:
+    """Dig through envelope keys for the first list of items.
+
+    Depth is bounded so a pathological payload can't walk forever. A
+    wrapper key naming the contents (``positions``) wins the kind hint over
+    a generic transport key (``data``), which carries no meaning.
+    """
+    if _depth > 3 or not isinstance(payload, dict):
+        return (None, kind_hint)
+    for k in _WRAPPER_KEYS:
+        v = payload.get(k)
+        if isinstance(v, list):
+            return (v, kind_hint or (k if k != "data" else None))
+        if isinstance(v, dict):
+            items, hint = _unwrap(v, kind_hint, _depth + 1)
+            if items is not None:
+                return (items, hint)
+    return (None, kind_hint)
+
+
 def ingest(payload: Any, source: str = "robinhood-mcp",
            kind_hint: str | None = None, ts: str | None = None) -> dict:
     """Store a payload collected from a broker/MCP tool as one event per item.
 
-    Accepts a dict, a list, or a JSON string; unwraps one level of common
-    envelope keys (results/orders/positions/...). Never raises on unknown
+    Accepts a dict, a list, or a JSON string; unwraps *nested* envelopes of
+    common keys (results/orders/positions/...). Never raises on unknown
     shapes — worst case the item lands as kind='data' with its raw JSON kept.
+
+    Nesting matters: the Robinhood MCP tools answer with
+    ``{"data": {"positions": [...]}}``, so unwrapping a single level would
+    store the whole envelope as one unreadable event and leave the Position
+    and Risk Managers blind — exactly the failure the discipline in
+    CLAUDE.md is written to prevent.
     """
     if isinstance(payload, str):
         try:
@@ -547,12 +574,8 @@ def ingest(payload: Any, source: str = "robinhood-mcp",
             pass  # keep the raw string as the payload
 
     items = payload if isinstance(payload, list) else None
-    if items is None and isinstance(payload, dict):
-        for k in _WRAPPER_KEYS:
-            if isinstance(payload.get(k), list):
-                items = payload[k]
-                kind_hint = kind_hint or k
-                break
+    if items is None:
+        items, kind_hint = _unwrap(payload, kind_hint)
     if items is None:
         items = [payload]
 
