@@ -470,6 +470,10 @@ def messages_sent(from_agent: str, since: str | None = None, limit: int = 200) -
 # ---------- Robinhood MCP payload ingestion ----------
 
 _WRAPPER_KEYS = ("results", "orders", "positions", "fills", "holdings", "items", "data")
+# Marks a pull that found no positions, and the account a pull came from.
+# Underscored so they can't collide with a broker's own field names.
+EMPTY_SNAPSHOT_KEY = "_empty_snapshot"
+ACCOUNT_KEY = "_account"
 _TICKER_KEYS = ("chain_symbol", "symbol", "ticker", "underlying_symbol", "instrument_symbol")
 _QTY_KEYS = ("quantity", "qty", "shares", "processed_quantity")
 _PRICE_KEYS = ("average_price", "executed_price", "price", "average_buy_price",
@@ -554,7 +558,8 @@ def _unwrap(payload: Any, kind_hint: str | None,
 
 
 def ingest(payload: Any, source: str = "robinhood-mcp",
-           kind_hint: str | None = None, ts: str | None = None) -> dict:
+           kind_hint: str | None = None, ts: str | None = None,
+           account: str | None = None) -> dict:
     """Store a payload collected from a broker/MCP tool as one event per item.
 
     Accepts a dict, a list, or a JSON string; unwraps *nested* envelopes of
@@ -566,6 +571,18 @@ def ingest(payload: Any, source: str = "robinhood-mcp",
     store the whole envelope as one unreadable event and leave the Position
     and Risk Managers blind — exactly the failure the discipline in
     CLAUDE.md is written to prevent.
+
+    An *empty* position pull is stored as one explicit marker event rather
+    than as nothing. Storing nothing leaves the previous snapshot standing,
+    so an account that has been emptied — every position closed, or the
+    Trader switching to a different account — keeps reporting holdings it
+    no longer has, and reports them confidently. "I looked and there is
+    nothing" is a real observation and has to be recordable.
+
+    ``account`` stamps which brokerage account was pulled. Snapshots are
+    reconstructed from whatever was ingested last, with no inherent notion
+    of whose positions they are, so pulls from two accounts are otherwise
+    indistinguishable after the fact.
     """
     if isinstance(payload, str):
         try:
@@ -579,9 +596,19 @@ def ingest(payload: Any, source: str = "robinhood-mcp",
     if items is None:
         items = [payload]
 
+    if not items and kind_hint in ("positions", "holdings"):
+        marker = {EMPTY_SNAPSHOT_KEY: True}
+        if account:
+            marker[ACCOUNT_KEY] = str(account)
+        ev = log_event("position", source=source, payload=marker,
+                       note="empty position pull — account holds nothing", ts=ts)
+        return {"stored": 1, "event_ids": [ev["id"]], "kinds": {"position": 1}}
+
     stored, kinds = [], {}
     for item in items:
         kind, ticker, note = _classify(item, kind_hint)
+        if account and isinstance(item, dict):
+            item = {**item, ACCOUNT_KEY: str(account)}
         ev = log_event(kind, ticker=ticker, source=source, note=note, payload=item, ts=ts)
         stored.append(ev["id"])
         kinds[kind] = kinds.get(kind, 0) + 1

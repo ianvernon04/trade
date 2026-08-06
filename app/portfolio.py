@@ -147,12 +147,43 @@ def broker_snapshot(events: list[dict] | None = None,
                 "unreadable": len(rows), "blind": True, "stale": False}
 
     cutoff = newest_ts - timedelta(seconds=window_seconds)
+
+    # An empty pull asserts the book was empty at that moment, so it has to
+    # supersede every row before it — not merely sit alongside them. Rows
+    # from the previous pull are usually still inside the window, so without
+    # a barrier the closed positions would outlive the pull that found them
+    # gone. Ordering falls back to event id because timestamps are only
+    # second-resolution and two pulls can share one.
+    def _order(r):
+        return (r.get("ts") or "", r.get("id") or 0)
+
+    barrier = None
+    for r in rows:
+        payload = r.get("payload") or {}
+        if isinstance(payload, dict) and payload.get(tracking.EMPTY_SNAPSHOT_KEY):
+            if barrier is None or _order(r) > barrier:
+                barrier = _order(r)
+
     positions, seen, unreadable = [], set(), 0
-    for r in sorted(rows, key=lambda r: r.get("ts") or "", reverse=True):
+    accounts, saw_empty_marker = set(), False
+    for r in sorted(rows, key=_order, reverse=True):
         t = _parse_ts(r.get("ts"))
         if t is None or t < cutoff:
             continue
-        p = normalize(r.get("payload") or {}, ticker_hint=r.get("ticker"))
+        payload = r.get("payload") or {}
+        if isinstance(payload, dict):
+            acct = payload.get(tracking.ACCOUNT_KEY)
+            if acct:
+                accounts.add(str(acct))
+            # An explicit "I pulled and there was nothing" marker. It carries
+            # no position by design, so counting it as unreadable would turn
+            # a confirmed-empty account into a blind one.
+            if payload.get(tracking.EMPTY_SNAPSHOT_KEY):
+                saw_empty_marker = True
+                continue
+        if barrier is not None and _order(r) <= barrier:
+            continue  # predates the pull that found the account empty
+        p = normalize(payload, ticker_hint=r.get("ticker"))
         if p is None:
             # A position event we can't reconstruct — usually logged as a
             # note without its payload. Counted, never assumed away.
@@ -177,7 +208,11 @@ def broker_snapshot(events: list[dict] | None = None,
         "unreadable": unreadable,
         # Rows that exist but none of which could be read still leaves the
         # agents unable to see the book — that is blindness, not a flat book.
-        "blind": not positions and unreadable > 0,
+        # A confirmed-empty pull is the opposite: the book is known, and it
+        # is empty.
+        "blind": not positions and unreadable > 0 and not saw_empty_marker,
+        "confirmed_empty": saw_empty_marker and not positions,
+        "accounts": sorted(accounts),
         "stale": age_hours > STALE_HOURS,
     }
 
@@ -287,6 +322,14 @@ def current(enrich_rows: bool = True, **kw) -> dict:
         rows = enrich(snap["positions"]) if enrich_rows else snap["positions"]
         return {**snap, "source": "robinhood-mcp", "positions": rows,
                 "totals": totals(rows), "blind": False}
+
+    # The broker answered, and the answer was "nothing". That is a real read
+    # of the book, so it must not fall through to the journal: doing so
+    # would resurrect hand-kept rows from a different account and present
+    # them as the holdings of an account we just confirmed is empty.
+    if snap.get("confirmed_empty"):
+        return {**snap, "source": "robinhood-mcp", "positions": [],
+                "totals": totals([]), "blind": False}
 
     # Nothing from the broker. The journal is a courtesy fallback for people
     # who do keep one; for everyone else this stays empty and we report

@@ -200,6 +200,41 @@ class TestCurrent(unittest.TestCase):
         self.assertEqual(cur["unreadable"], 0)
         self.assertEqual({p["ticker"] for p in cur["positions"]}, {"NVDA", "AAPL"})
 
+    def test_empty_pull_replaces_the_previous_book(self):
+        """Closing everything must not leave yesterday's holdings standing.
+
+        An empty pull used to store zero events, so the prior snapshot
+        stayed newest forever and the agents kept reporting positions the
+        account no longer held — confidently, with blind=False.
+        """
+        tracking.ingest({"positions": [RH_CALL, RH_STOCK]}, source="robinhood-mcp")
+        tracking.ingest({"positions": []}, source="robinhood-mcp",
+                        kind_hint="positions")
+        cur = portfolio.current(enrich_rows=False)
+        self.assertEqual(cur["positions"], [])
+        self.assertTrue(cur["confirmed_empty"])
+
+    def test_confirmed_empty_is_not_blindness(self):
+        """"I looked, it's empty" and "I can't see" must stay distinct."""
+        tracking.ingest({"positions": []}, source="robinhood-mcp",
+                        kind_hint="positions")
+        cur = portfolio.current(enrich_rows=False)
+        self.assertFalse(cur["blind"])
+        self.assertEqual(cur["source"], "robinhood-mcp")
+        self.assertEqual(cur["unreadable"], 0)
+
+    def test_ingest_stamps_the_account_it_pulled(self):
+        tracking.ingest({"positions": [RH_STOCK]}, source="robinhood-mcp",
+                        account="000000000")
+        self.assertEqual(portfolio.broker_snapshot()["accounts"], ["000000000"])
+
+    def test_empty_pull_still_records_the_account(self):
+        tracking.ingest({"positions": []}, source="robinhood-mcp",
+                        kind_hint="positions", account="000000000")
+        snap = portfolio.broker_snapshot()
+        self.assertTrue(snap["confirmed_empty"])
+        self.assertEqual(snap["accounts"], ["000000000"])
+
     def test_nested_envelope_keeps_the_contents_kind(self):
         """'data' is transport; 'positions' is what the rows actually are."""
         res = tracking.ingest({"data": {"positions": [RH_STOCK]}},

@@ -96,8 +96,22 @@ these rules in every session:
    record them:
 
    ```
-   python3 -m app ingest --payload '-'   # pipe the positions tool result
+   # pipe the positions tool result; account number comes from get_accounts
+   python3 -m app ingest --payload '-' --account <agentic-account-number>
    ```
+
+   **Pull the account the agent can actually trade** — the one `get_accounts`
+   reports with `agentic_allowed=true`. Monitoring a book you cannot act on produces
+   exit and expiry alerts nobody can execute. Always pass `--account`: a
+   snapshot has no inherent notion of whose positions it holds, so two
+   accounts are indistinguishable after the fact without it.
+
+   **Ingest the empty result too.** When the account holds nothing, pipe the
+   empty payload anyway — it is recorded as an explicit "pulled, found
+   nothing" marker that supersedes the previous snapshot. Skipping it leaves
+   yesterday's holdings standing as though still open, reported with
+   confidence. `confirmed_empty` (a known-flat book) and `blind` (no readable
+   data) are different states and the agents treat them differently.
 
    The Position Manager and Risk Manager read *only* this (`app/portfolio.py`),
    because the Journal is hand-kept data the owner may never touch. You are
@@ -304,7 +318,7 @@ python3 -m app analyze NVDA [--options] [--weekly] [--horizon 10] [--json]
 python3 -m app decide --ticker NVDA --action call --price 181.2 --rationale "..." [--snapshot]
 python3 -m app log proposal --ticker NVDA --note "<exact order ticket stated in chat>"
 python3 -m app log order --ticker NVDA --source robinhood-mcp --payload '{...}' | @file | -
-python3 -m app ingest --payload - [--kind positions] [--source robinhood-mcp]
+python3 -m app ingest --payload - [--kind positions] [--source robinhood-mcp] [--account N]
 python3 -m app news-scan [--no-send]         # one Analyst cycle: feeds → analysis → trader inbox
 python3 -m app position-scan [--user-id N] [--no-send]  # Position Manager: positions → exits/alerts
 python3 -m app risk-scan [--no-send]         # Risk Manager: portfolio Greeks → risk alerts

@@ -183,7 +183,8 @@ def cmd_ingest(args) -> int:
         print("error: provide --payload (inline JSON, @file, or '-' for stdin)",
               file=sys.stderr)
         return 2
-    res = tracking.ingest(payload, source=args.source, kind_hint=args.kind)
+    res = tracking.ingest(payload, source=args.source, kind_hint=args.kind,
+                          account=args.account)
     _out(res, args.json, lambda o: print(
         f"Stored {o['stored']} event(s): "
         + ", ".join(f"{k}×{n}" for k, n in o["kinds"].items())))
@@ -613,6 +614,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--payload", help="inline JSON, @file, or '-' for stdin")
     sp.add_argument("--source", default="robinhood-mcp")
     sp.add_argument("--kind", help="hint when the shape is ambiguous: orders|positions|fills")
+    sp.add_argument("--account", help="brokerage account the pull came from, "
+                                      "so snapshots from two accounts stay distinguishable")
     jflag(sp)
     sp.set_defaults(fn=cmd_ingest)
 
