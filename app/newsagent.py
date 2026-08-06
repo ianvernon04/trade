@@ -154,11 +154,22 @@ def run_scan(fetch=None, send: bool = True) -> dict:
         from . import news
         fetch = news.get_tech_news
     items = fetch(120) or []
+
+    # A model reads the headlines the rules flagged, when it's switched on and
+    # reachable; otherwise the word-list verdicts stand. Which path ran is
+    # recorded on the event, because "bearish tone" means something different
+    # coming from a keyword count than from a model that read the sentence.
+    from . import llmsentiment
+    items, sentiment_meta = llmsentiment.rescore(items)
+
     a = analyze(items)
+    a["sentiment_meta"] = sentiment_meta
     tracking.log_event(
         "news_scan", source=AGENT_ID,
         note=(f"{a['n_headlines']} headlines — {a['overall']['sentiment']} tone; "
-              f"{len(a['macro'])} macro topic(s), {len(a['tickers'])} ticker(s) tagged"),
+              f"{len(a['macro'])} macro topic(s), {len(a['tickers'])} ticker(s) tagged; "
+              f"sentiment via {sentiment_meta['path']}"
+              + (f" ({sentiment_meta['reason']})" if sentiment_meta.get("reason") else "")),
         payload=a)
     delivered, deduped = [], 0
     if send:

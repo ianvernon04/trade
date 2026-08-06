@@ -39,7 +39,17 @@ Five agents share this repo, one brain each, talking over the message bus:
 - **The Trader** (`trader`) — everything in this file up to now: analyzes,
   proposes, and (with approval) executes through the Robinhood MCP server.
 - **The Analyst** (`analyst`, `app/newsagent.py`) — reads all the news feeds
-  so the Trader doesn't have to. It aggregates headline sentiment per ticker,
+  so the Trader doesn't have to. Sentiment comes from a keyword count by
+  default; set `ANALYST_LLM_SENTIMENT=1` (and `pip install anthropic`, plus
+  credentials) to have a model read the flagged headlines instead
+  (`app/llmsentiment.py`). The model sees only headlines the rules already
+  tagged with a ticker or macro topic, capped per scan. **Every failure —
+  no SDK, no credentials, an API error, a malformed reply — falls back to
+  the keyword verdict**, and each `news_scan` event records which path
+  actually ran, because "bearish tone" means something different from a
+  word count than from a model that read the sentence. It is deliberately
+  **not** wired to the autonomous gate: a hallucinated macro alert must not
+  be able to veto a trading day. It aggregates headline sentiment per ticker,
   flags same-direction clusters, and watches macro-risk topics (Fed/rates,
   CPI, tariffs, geopolitics, credit). Findings arrive in the Trader's inbox
   as normal-priority briefings and high-priority alerts. The Analyst runs
