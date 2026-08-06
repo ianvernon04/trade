@@ -302,10 +302,22 @@ live` switches it on for real. Output lands in `autotrade.log` (gitignored).
 
 On you to confirm before trusting it with real money:
 
-- **Robinhood auth surviving a headless run is untested.** `/mcp` login
-  opens a real browser; whether those credentials still work in a scheduled
-  run days later is unknown. This is what dry mode is for — if auth is dead,
-  the log shows it and nothing traded.
+- ~~**Robinhood auth surviving a headless run is untested.**~~ **Answered
+  2026-08-06:** a scheduled run reached `get_accounts` and
+  `get_option_positions` and got real data back, so the `/mcp` browser login
+  does survive into an unattended run. What blocks the snapshot now is the
+  *permission* layer, not auth — see the next bullet.
+- **Every MCP tool the routine calls must be allowlisted, or the run goes
+  half-blind.** `get_equity_positions` was denied by an approval prompt no
+  one was there to answer, so rule 2's snapshot could not be refreshed. The
+  run correctly refused to ingest the options half on its own: that would
+  have written a `confirmed_empty` marker asserting a flat book on the
+  strength of half a pull, which is worse than staying blind. Order-placing
+  tools are deliberately **not** allowlisted and must stay that way.
+- **The repo must not live under `~/Desktop`.** macOS TCC privacy-protects
+  Desktop/Documents/Downloads from background agents: the first scheduled
+  run died at exit 126 with `Operation not permitted`, unable to even read
+  `autotrade.sh`. It now lives at `~/trade`.
 - **A hang means a permission prompt.** `claude -p` waits forever on an
   interactive tool-approval prompt no one is there to answer. If a run
   produces no output past "starting run", see the `CLAUDE_FLAGS` comment in
