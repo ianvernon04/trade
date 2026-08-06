@@ -10,3 +10,14 @@ cron-stderr.log
 launchd-stdout.log
 launchd-stderr.log
 server.log
+
+# This repo is public, and these hold real account data — account numbers,
+# balances, position sizes. settings.local.json in particular accumulates
+# allowlisted command strings, and the commands this agent runs quote live
+# positions back verbatim. A machine-level ignore covers it here but does
+# not travel with a clone, so the rule belongs in the repo too.
+.claude/settings.local.json
+*.local.json
+positions*.json
+eqpos*.json
+backup*.json

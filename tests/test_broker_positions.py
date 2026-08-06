@@ -7,9 +7,13 @@ KeyError on the generic shape.
 
 That path was unreachable for as long as the agents read the (empty) journal,
 and crashed the first time a real broker position produced a plain expiry or
-earnings warning — an ZZTOP earnings notice, in practice. Reconstruction of
-the book itself is covered by tests/test_portfolio.py; this file only pins
-the message-composition contract that broke.
+earnings warning. Reconstruction of the book itself is covered by
+tests/test_portfolio.py; this file only pins the message-composition
+contract that broke.
+
+Fixtures use placeholder tickers on purpose: this repo is public, and real
+symbols from the owner's account would disclose holdings to anyone reading
+the tests.
 """
 
 from __future__ import annotations
@@ -39,10 +43,10 @@ class TestPositionsWithoutADatabaseId(unittest.TestCase):
 
     BROKER_POSITION = {  # exactly the keys app/portfolio.py produces
         "ticker": "ZZTOP", "instrument": "stock", "direction": "long",
-        "quantity": 10.00, "strike": None, "expiry": None, "entry_price": 50.00,
-        "mark": 74.8, "unrealized_pnl": 27.0, "unrealized_pnl_pct": 3.2,
-        "delta_shares": 11.5, "theta_per_day": 0.0, "iv": None, "dte": None,
-        "earnings_in_days": 5, "flags": [], "underlying_price": 74.8,
+        "quantity": 10.0, "strike": None, "expiry": None, "entry_price": 50.0,
+        "mark": 51.0, "unrealized_pnl": 10.0, "unrealized_pnl_pct": 2.0,
+        "delta_shares": 10.0, "theta_per_day": 0.0, "iv": None, "dte": None,
+        "earnings_in_days": 5, "flags": [], "underlying_price": 51.0,
         "as_of": "2026-08-06T00:00:00Z",
     }
 
@@ -71,7 +75,7 @@ class TestActionShapes(unittest.TestCase):
     def test_generic_action_without_type_does_not_crash(self):
         a = _analysis(
             actions=[{"ticker": "ZZTOP", "instrument": "stock", "position_id": "rh:ZZTOP",
-                      "strike": None, "expiry": None, "unrealized_pnl_pct": 3.2,
+                      "strike": None, "expiry": None, "unrealized_pnl_pct": 2.0,
                       "alerts": ["earnings 5d away"]}],
             earnings_warns=[("ZZTOP", 5, {})],
         )
@@ -103,7 +107,7 @@ class TestActionShapes(unittest.TestCase):
                 {"type": "take_profit", "ticker": "NVDA", "position_id": "1",
                  "pnl_pct": 80.0, "note": "call up"},
                 {"ticker": "ZZTOP", "instrument": "stock", "position_id": "2",
-                 "strike": None, "expiry": None, "unrealized_pnl_pct": 3.2,
+                 "strike": None, "expiry": None, "unrealized_pnl_pct": 2.0,
                  "alerts": ["earnings 5d away"]},
             ],
         )
