@@ -29,6 +29,44 @@ def _analysis(**over) -> dict:
     return base
 
 
+class TestPositionsWithoutADatabaseId(unittest.TestCase):
+    """Broker-sourced positions have no "id" — there is no row to have one.
+
+    analyze_positions indexed p["id"], which every test fixture supplied and
+    the real account did not. Passing against fixtures while crashing against
+    production is the failure mode worth pinning here.
+    """
+
+    BROKER_POSITION = {  # exactly the keys app/portfolio.py produces
+        "ticker": "ZZTOP", "instrument": "stock", "direction": "long",
+        "quantity": 10.00, "strike": None, "expiry": None, "entry_price": 50.00,
+        "mark": 74.8, "unrealized_pnl": 27.0, "unrealized_pnl_pct": 3.2,
+        "delta_shares": 11.5, "theta_per_day": 0.0, "iv": None, "dte": None,
+        "earnings_in_days": 5, "flags": [], "underlying_price": 74.8,
+        "as_of": "2026-08-06T00:00:00Z",
+    }
+
+    def test_analyze_does_not_require_an_id(self):
+        a = positionagent.analyze_positions([self.BROKER_POSITION])
+        self.assertEqual(a["n_positions"], 1)
+        self.assertEqual(len(a["actions"]), 1)
+
+    def test_position_id_falls_back_to_the_contract(self):
+        pid = positionagent._position_id(self.BROKER_POSITION)
+        self.assertIn("ZZTOP", pid)
+
+    def test_option_id_includes_strike_and_expiry(self):
+        pid = positionagent._position_id(
+            {"ticker": "NVDA", "instrument": "call", "strike": 212.5,
+             "expiry": "2026-09-18"})
+        self.assertIn("212.5", pid)
+        self.assertIn("2026-09-18", pid)
+
+    def test_journal_id_still_wins_when_present(self):
+        pid = positionagent._position_id({**self.BROKER_POSITION, "id": 42})
+        self.assertEqual(pid, "42")
+
+
 class TestActionShapes(unittest.TestCase):
     def test_generic_action_without_type_does_not_crash(self):
         a = _analysis(

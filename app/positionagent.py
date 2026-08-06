@@ -34,6 +34,25 @@ DTE_ALERT = 7  # days to expiry for warning
 EARNINGS_ALERT = 5  # days to earnings for warning
 
 
+def _position_id(p: dict) -> str:
+    """A stable handle for a position, whatever produced it.
+
+    Journal rows carry a database "id"; broker snapshots reconstructed by
+    app/portfolio.py do not — there is no row to have an id. Indexing p["id"]
+    therefore worked against every test fixture and raised KeyError against
+    the real account. Falling back to the contract's own identity keeps the
+    reference meaningful in a message a human reads later.
+    """
+    if p.get("id") is not None:
+        return str(p["id"])
+    bits = [str(p.get("ticker") or "?"), str(p.get("instrument") or "?")]
+    if p.get("strike"):
+        bits.append(str(p["strike"]))
+    if p.get("expiry"):
+        bits.append(str(p["expiry"]))
+    return ":".join(bits)
+
+
 def analyze_positions(pos_list: list[dict]) -> dict:
     """Analyze a batch of open positions for exit opportunities and risk."""
     actions = []  # exit, roll, take_profit, theta_decay, earnings_risk, reversal
@@ -62,7 +81,7 @@ def analyze_positions(pos_list: list[dict]) -> dict:
             actions.append({
                 "ticker": p["ticker"],
                 "type": "take_profit",
-                "position_id": p["id"],
+                "position_id": _position_id(p),
                 "pnl_pct": p["unrealized_pnl_pct"],
                 "note": f"{p['instrument']} @ {p['strike']} is up {p['unrealized_pnl_pct']:.0f}%",
             })
@@ -74,7 +93,7 @@ def analyze_positions(pos_list: list[dict]) -> dict:
             actions.append({
                 "ticker": p["ticker"],
                 "type": "reversal",
-                "position_id": p["id"],
+                "position_id": _position_id(p),
                 "pnl_pct": p["unrealized_pnl_pct"],
                 "note": f"{p['instrument']} at {p['strike']} down {abs(p['unrealized_pnl_pct']):.0f}%",
             })
@@ -94,7 +113,7 @@ def analyze_positions(pos_list: list[dict]) -> dict:
             actions.append({
                 "ticker": p["ticker"],
                 "instrument": p["instrument"],
-                "position_id": p["id"],
+                "position_id": _position_id(p),
                 "strike": p.get("strike"),
                 "expiry": p.get("expiry"),
                 "unrealized_pnl_pct": p.get("unrealized_pnl_pct"),
