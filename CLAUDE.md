@@ -261,10 +261,26 @@ above instead; autonomous mode is the exception, not the default.
    policy mid-run to make a denied order pass: the policy is the owner's
    standing instruction, not something to negotiate with.
 
-6. For an order that clears both the entry bar and the gate: log the
-   proposal (`python3 -m app log proposal ...`) with the exact contract
-   *before* calling the order tool, place it, then immediately record it so
-   it counts toward the daily cap and lands in the audit trail:
+6. **Before placing anything, check for orders still working.** Call
+   `get_equity_orders` / `get_option_orders` and look for a non-terminal
+   state (`queued`, `unconfirmed`, `confirmed`, `partially_filled`). **If any
+   exist, place nothing this run** — log a note naming them and stop.
+
+   The daily cap counts orders at *placement*, so it cannot be gamed within
+   a day. Across days it can: an unfilled limit order from Monday is still
+   working on Tuesday, and a run that ignores it adds a second. Five quiet
+   days of that is five live orders against one account, and they can all
+   fill at once on the sixth. Nothing else in the system notices this —
+   the cap resets at midnight UTC and the position snapshot shows only
+   *fills*, never resting orders.
+
+   This run cannot cancel (`cancel_*` is deliberately unlisted), so standing
+   down is the whole remedy. Clearing a stale order is the owner's job.
+
+7. For an order that clears the entry bar, the gate, and the open-order
+   check: log the proposal (`python3 -m app log proposal ...`) with the exact
+   contract *before* calling the order tool, place it, then immediately
+   record it so it counts toward the daily cap and lands in the audit trail:
 
    ```python
    from app import autonomy
@@ -272,7 +288,7 @@ above instead; autonomous mode is the exception, not the default.
    ```
 
    Link the decision with `--order-id` — identical to live-chat discipline.
-7. Whether or not anything traded, end by logging a `note` event summarizing
+8. Whether or not anything traded, end by logging a `note` event summarizing
    the run (what was scanned, what passed/failed, what happened) so a human
    reading the diary later has the full picture.
 
