@@ -406,6 +406,18 @@ def inbox(to_agent: str, unread_only: bool = False, limit: int = 100) -> list[di
     return rows
 
 
+def agent_last_active(agent: str) -> str | None:
+    """Timestamp of the most recent event this agent logged, or None.
+
+    Used to tell "this agent found nothing" apart from "this agent stopped
+    running". Silence from a scanner is not evidence of calm.
+    """
+    with _conn() as c:
+        row = c.execute("SELECT ts FROM agent_events WHERE source = ? "
+                        "ORDER BY ts DESC, id DESC LIMIT 1", (agent,)).fetchone()
+    return row["ts"] if row else None
+
+
 def standing_alerts(to_agent: str, hours: int = 12, priority: str = "high",
                     from_agent: str | None = None, now: str | None = None) -> list[dict]:
     """High-priority mail from the last `hours`, **read or not**.

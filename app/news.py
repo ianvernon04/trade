@@ -14,6 +14,7 @@ import threading
 import time
 
 import feedparser
+import requests
 import yfinance as yf
 
 TECH_FEEDS = {
@@ -107,9 +108,19 @@ def _sentiment(title: str) -> str:
     return "neutral"
 
 
+# A feed that accepts the connection and then never sends a byte must not be
+# able to wedge the fetch forever. feedparser.parse(url) does its own urllib
+# fetch with no timeout, so the bytes are pulled here with an explicit one and
+# handed to feedparser already in memory.
+FEED_TIMEOUT = (5, 10)  # (connect, read) seconds
+
+
 def _fetch_feed(name: str, url: str) -> list[dict]:
     try:
-        parsed = feedparser.parse(url)
+        resp = requests.get(url, timeout=FEED_TIMEOUT,
+                            headers={"User-Agent": "options-trading-assistant/1.0"})
+        resp.raise_for_status()
+        parsed = feedparser.parse(resp.content)
         items = []
         for e in parsed.entries[:20]:
             ts = None

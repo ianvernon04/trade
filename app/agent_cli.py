@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import autonomy, tracking
@@ -378,7 +379,31 @@ def cmd_alerts(args) -> int:
     Deliberately a separate command from `inbox`, and deliberately exit-coded
     like `autonomy check`: an unattended run must not be able to satisfy this
     check by having already read the mail.
+
+    A silent scanner reads exactly like a calm market, so the freshness check
+    below is not a nicety. The Analyst's thread wedged on a hung RSS feed for
+    56 hours once, and for every one of those hours this command answered
+    CLEAR — not because there was no macro risk, but because nothing was
+    looking for any. An unattended run would have traded straight through it.
     """
+    if args.from_agent:
+        last = tracking.agent_last_active(args.from_agent)
+        stale_after = timedelta(hours=args.max_staleness_hours)
+        now = datetime.now(timezone.utc)
+        if last is None:
+            print(f"STALE — '{args.from_agent}' has never logged a scan. "
+                  "Cannot confirm the window is clear; standing down.")
+            return 1
+        age = now - datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        if age > stale_after:
+            hrs = age.total_seconds() / 3600
+            print(f"STALE — '{args.from_agent}' last scanned {hrs:.1f}h ago "
+                  f"(limit {args.max_staleness_hours}h), so a quiet window "
+                  "proves nothing. Standing down.\n"
+                  "  Silence from a scanner is not evidence of calm — check "
+                  "that the agent is actually running.")
+            return 1
+
     rows = tracking.standing_alerts(args.agent, hours=args.hours,
                                     priority=args.priority,
                                     from_agent=args.from_agent)
@@ -713,6 +738,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--priority", default="high")
     sp.add_argument("--from", dest="from_agent",
                     help="only alerts from this agent, e.g. analyst")
+    sp.add_argument("--max-staleness-hours", type=float, default=2.0,
+                    help="stand down if that agent has not scanned this "
+                         "recently (default 2h; it scans every 15 min)")
     jflag(sp)
     sp.set_defaults(fn=cmd_alerts)
 
