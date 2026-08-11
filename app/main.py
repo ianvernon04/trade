@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from . import (alerts, backtest, calendar_events, data, journal, news, newsagent,
                options, patternagent, positionagent, positions, riskagent, scanner,
-               scorecard, tracking)
+               scorecard, tracking, trend)
 from .signals import score_frame, score_series
 
 
@@ -176,6 +176,19 @@ def run_backtest(
 def morning_scan(tickers: Optional[str] = None):
     syms = [s.strip().upper() for s in tickers.split(",") if s.strip()] if tickers else None
     return _safe(lambda: scanner.scan(syms))
+
+
+@app.get("/api/trend")
+def daily_trend(tickers: Optional[str] = None):
+    """Daily trend across the tickers this account trades.
+
+    With no `tickers`, the universe is resolved from local tracking data —
+    holdings, then decisions, then previously-held names. A deployment with no
+    tracking store (the public one) gets the default watchlist instead, so the
+    owner's book never travels with the code.
+    """
+    syms = [s.strip().upper() for s in tickers.split(",") if s.strip()] if tickers else None
+    return _safe(lambda: trend.report(syms))
 
 
 @app.get("/api/scorecard/{ticker}")

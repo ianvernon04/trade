@@ -184,6 +184,7 @@ function loadTab(name) {
   if (name === "town") loadTown();
   if (name === "agent") loadAgentBody();
   if (name === "scanner") loadScanner();
+  if (name === "trend") loadTrend();
   if (name === "analyze") loadAnalysis();
   if (name === "options") loadOptions();
   if (name === "backtest") { $("#bt-ticker").textContent = currentTicker; }
@@ -718,6 +719,72 @@ function renderTown(t) {
   wire(".house-pm", "journal");
   wire(".house-rm", "journal");
   wire(".house-pe", "agent");
+}
+
+/* ---------------- daily trend ---------------- */
+
+const trendPct = (v) =>
+  v === null || v === undefined ? '<span class="muted">–</span>'
+    : `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v}%</span>`;
+
+async function loadTrend() {
+  try {
+    const d = await api("/api/trend");
+    const s = d.summary;
+
+    // Say which universe this is. On the public deployment there is no
+    // tracking store, so it falls back to the generic watchlist — and a table
+    // headed "the stocks you trade" had better admit when it is not those.
+    const scope = d.source === "account"
+      ? `${s.n} ticker(s) you hold or have traded`
+      : `${s.n} ticker(s) from the default watchlist — no account history on this instance`;
+    $("#trend-summary").innerHTML =
+      `<b>${s.tone}</b> — ${s.up} rising, ${s.down} falling, ${s.sideways} sideways. ${scope}.`;
+    $("#trend-updated").textContent = d.generated_at ? `updated ${d.generated_at} UTC` : "";
+
+    $("#trend-table tbody").innerHTML = d.trends.map(t => {
+      if (t.error) {
+        return `<tr><td><b>${t.ticker}</b></td><td colspan="10" class="err">${t.error}</td></tr>`;
+      }
+      const arrow = t.direction === "up" ? "▲" : t.direction === "down" ? "▼" : "▬";
+      const cls = t.direction === "up" ? "up" : t.direction === "down" ? "down" : "muted";
+      // A conflicted read is the one number a trader must not skim past, so it
+      // is labelled in place rather than left to be inferred from the columns.
+      const dir = t.conflict
+        ? `<span class="muted" title="The 20-day fit and the net move disagree — treat direction as unresolved">▬ mixed signal</span>`
+        : `<span class="${cls}">${arrow} ${t.direction}</span>`;
+      const streak = t.streak === 0 ? '<span class="muted">–</span>'
+        : `<span class="${t.streak > 0 ? "up" : "down"}">${Math.abs(t.streak)}d ${t.streak > 0 ? "up" : "down"}</span>`;
+      const stack = t.ma_stack
+        ? `<span class="${t.ma_stack === "bullish" ? "up" : "down"}">${t.above_sma20 ? "above" : "below"} 20 · ${t.ma_stack}</span>`
+        : '<span class="muted">–</span>';
+      const held = t.origin === "held" ? '<span class="up">✔ held</span>'
+        : t.origin === "decided" ? '<span class="muted">traded</span>'
+        : '<span class="muted">–</span>';
+      return `<tr class="scan-row" data-t="${t.ticker}">
+        <td><b>${t.ticker}</b></td><td>${fmt$(t.price)}</td>
+        <td>${dir}</td><td class="muted">${t.strength}</td><td>${streak}</td>
+        <td>${trendPct(t.change_1d)}</td><td>${trendPct(t.change_5d)}</td><td>${trendPct(t.change_20d)}</td>
+        <td class="muted">${t.consistency === null ? "–" : t.consistency + "%"}</td>
+        <td>${stack}</td><td>${held}</td></tr>`;
+    }).join("");
+
+    $("#trend-note").textContent =
+      `Trend is the ${d.lookback_days}-day regression slope measured in ATR per day, so a $500 stock `
+      + `and a $15 stock are compared on the same scale. "One-way" is the share of days that moved with `
+      + `the trend — same slope with 75% is a cleaner move than with 45%. Rows marked "mixed signal" are `
+      + `ones where the slope and the net 20-day move disagree; direction there is genuinely unresolved, not up or down.`;
+
+    document.querySelectorAll("#trend-table .scan-row").forEach(r => {
+      r.addEventListener("click", () => {
+        currentTicker = r.dataset.t;
+        $("#ticker-input").value = currentTicker;
+        switchTab("analyze");
+      });
+    });
+  } catch (e) {
+    $("#trend-summary").innerHTML = `<span class="err">Could not load trend: ${e.message}</span>`;
+  }
 }
 
 /* ---------------- scanner + calendar + alerts ---------------- */
