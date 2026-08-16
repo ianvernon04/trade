@@ -27,6 +27,7 @@ class OnlyMeYouTestCase(unittest.TestCase):
         store.MEDIA_DIR = root / "media"
         store.DB_PATH = root / "test.db"
         store.init()
+        store._pin_fails.clear()
 
     def tearDown(self):
         store.DATA_DIR, store.MEDIA_DIR, store.DB_PATH = self._old
@@ -62,6 +63,44 @@ class OnlyMeYouTestCase(unittest.TestCase):
         self.assertEqual(couple["name_a"], "A")
         self.assertEqual(couple["name_b"], "Bee")
         self.assertEqual(couple["anniversary"], "2024-01-01")
+
+    def test_data_dir_env_override(self):
+        """OMY_DATA_DIR points the whole world at a persistent disk."""
+        import importlib
+        import os
+        target = Path(self._tmp.name) / "envdata"
+        os.environ["OMY_DATA_DIR"] = str(target)
+        try:
+            importlib.reload(store)
+            self.assertEqual(store.DATA_DIR, target)
+            self.assertEqual(store.MEDIA_DIR, target / "media")
+            self.assertEqual(store.DB_PATH, target / "onlymeyou.db")
+        finally:
+            del os.environ["OMY_DATA_DIR"]
+            importlib.reload(store)  # back to defaults; tearDown re-patches
+
+    # ---------------- pin throttle ----------------
+
+    def test_pin_throttle_locks_an_address_out(self):
+        self.assertTrue(store.pin_throttle_ok("1.2.3.4", now=T0))
+        for _ in range(store.PIN_MAX_FAILS):
+            store.pin_throttle_note("1.2.3.4", ok=False, now=T0)
+        self.assertFalse(store.pin_throttle_ok("1.2.3.4", now=T0))
+        self.assertTrue(store.pin_throttle_ok("5.6.7.8", now=T0))  # others fine
+        later = T0 + timedelta(seconds=store.PIN_WINDOW_SECONDS + 1)
+        self.assertTrue(store.pin_throttle_ok("1.2.3.4", now=later))
+
+    def test_pin_throttle_success_clears_the_address(self):
+        for _ in range(store.PIN_MAX_FAILS - 1):
+            store.pin_throttle_note("1.2.3.4", ok=False, now=T0)
+        store.pin_throttle_note("1.2.3.4", ok=True, now=T0)
+        self.assertTrue(store.pin_throttle_ok("1.2.3.4", now=T0))
+
+    def test_pin_throttle_global_backstop(self):
+        # a bot rotating spoofed addresses still hits the shared ceiling
+        for i in range(store.PIN_GLOBAL_MAX_FAILS):
+            store.pin_throttle_note(f"10.0.0.{i}", ok=False, now=T0)
+        self.assertFalse(store.pin_throttle_ok("99.99.99.99", now=T0))
 
     # ---------------- time parsing ----------------
 

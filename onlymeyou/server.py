@@ -44,6 +44,15 @@ def _pin_from(request: Request) -> str | None:
     return request.headers.get("x-pin") or request.cookies.get("omy_pin")
 
 
+def _client_ip(request: Request) -> str:
+    # Behind a hosting proxy (Render et al.) the real caller is the first
+    # X-Forwarded-For hop; locally it's the socket peer.
+    fwd = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if fwd:
+        return fwd
+    return request.client.host if request.client else "?"
+
+
 def _authed(request: Request) -> bool:
     return store.check_pin(_pin_from(request))
 
@@ -114,6 +123,8 @@ def _media_response(path: Path, content_type: str, request: Request) -> Response
 # --------------------------------------------------------------------------
 # the PIN gate. /api/state and /api/setup stay reachable so a fresh device
 # can learn it needs a PIN (or run first-time setup) — neither leaks data.
+# Wrong-PIN attempts are throttled per address (and globally) because on an
+# always-on public URL this gate is all that guards two people's photos.
 
 _OPEN_PATHS = {"/api/state", "/api/setup"}
 
@@ -121,8 +132,15 @@ _OPEN_PATHS = {"/api/state", "/api/setup"}
 @app.middleware("http")
 async def pin_gate(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/api/") and path not in _OPEN_PATHS:
-        if not store.check_pin(_pin_from(request)):
+    if path.startswith("/api/"):
+        ip = _client_ip(request)
+        if not store.pin_throttle_ok(ip):
+            return _err(429, "too many PIN tries — wait a minute and try again 🕐")
+        pin = _pin_from(request)
+        authed = store.check_pin(pin)
+        if pin and store.pin_is_set():
+            store.pin_throttle_note(ip, ok=authed)
+        if not authed and path not in _OPEN_PATHS:
             return _err(401, "pin_required")
     return await call_next(request)
 
