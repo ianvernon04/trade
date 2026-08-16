@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Only Me &amp; You</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#ffd9e8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Me & You">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<div id="bg" aria-hidden="true">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+</div>
+<div id="ambient" aria-hidden="true"></div>
+
+<!-- ============ loading ============ -->
+<section id="screen-loading" class="screen center-screen">
+  <div class="big-heart pulse">💞</div>
+</section>
+
+<!-- ============ first-time setup ============ -->
+<section id="screen-setup" class="screen center-screen hidden">
+  <div class="card setup-card">
+    <div class="logo-heart">💞</div>
+    <h1 class="app-title">Only Me <span class="amp">&amp;</span> You</h1>
+    <p class="soft">A tiny private world for two.<br>Set it up once — it's just for you both.</p>
+    <label class="field"><span>Your name</span>
+      <input id="setup-name-a" type="text" maxlength="40" placeholder="e.g. Ian" autocomplete="off">
+    </label>
+    <label class="field"><span>Your love's name</span>
+      <input id="setup-name-b" type="text" maxlength="40" placeholder="e.g. Mia" autocomplete="off">
+    </label>
+    <label class="field"><span>Our special date 💍 <em>(optional)</em></span>
+      <input id="setup-anniversary" type="date">
+    </label>
+    <label class="field"><span>Couple PIN 🔒 <em>(optional, but wise)</em></span>
+      <input id="setup-pin" type="tel" inputmode="numeric" maxlength="8" placeholder="e.g. 2214" autocomplete="off">
+    </label>
+    <button id="setup-go" class="btn btn-primary btn-big">Create our world 💖</button>
+  </div>
+</section>
+
+<!-- ============ pin ============ -->
+<section id="screen-pin" class="screen center-screen hidden">
+  <div class="card setup-card">
+    <div class="logo-heart">🔒</div>
+    <h1 class="app-title small">Only Me <span class="amp">&amp;</span> You</h1>
+    <p class="soft">Enter your couple PIN</p>
+    <input id="pin-input" class="pin-box" type="tel" inputmode="numeric" maxlength="8" placeholder="• • • •" autocomplete="off">
+    <p id="pin-error" class="pin-error hidden">That's not it 🙈 try again</p>
+    <button id="pin-go" class="btn btn-primary btn-big">Let me in 💕</button>
+  </div>
+</section>
+
+<!-- ============ who are you ============ -->
+<section id="screen-who" class="screen center-screen hidden">
+  <div class="card setup-card">
+    <div class="logo-heart">👋</div>
+    <h1 class="app-title small">Who are you<br>on this phone?</h1>
+    <p class="soft">So your notes go to the right heart.</p>
+    <div class="who-row">
+      <button id="who-a" class="who-btn who-a"><span class="who-emoji">🩷</span><span id="who-a-name">Me</span></button>
+      <button id="who-b" class="who-btn who-b"><span class="who-emoji">💜</span><span id="who-b-name">You</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ the app ============ -->
+<div id="app" class="hidden">
+
+  <header id="topbar">
+    <div class="brand"><span class="brand-heart">💞</span> Only Me <span class="amp">&amp;</span> You</div>
+    <div id="today-chip" class="today-chip"></div>
+  </header>
+
+  <main id="panels">
+
+    <!-- ~~~~ home ~~~~ -->
+    <section id="tab-home" class="panel">
+      <h2 id="greeting" class="greeting">Hi 💕</h2>
+
+      <div class="card clock-card">
+        <div id="clock-date" class="clock-date"></div>
+        <div id="clock-time" class="clock-time"></div>
+      </div>
+
+      <div class="card together-card" id="together-card">
+        <div class="together-label">together for</div>
+        <div class="together-days"><span id="together-days">–</span><span class="together-days-word">days</span></div>
+        <div id="together-hms" class="together-hms"></div>
+        <div id="together-empty" class="soft hidden">Set your special date in <b>Us</b> 💍</div>
+      </div>
+
+      <div id="waiting-strip" class="waiting-strip hidden">
+        <span id="waiting-text"></span>
+        <button class="btn btn-mini" data-goto="notes">open 🎁</button>
+      </div>
+      <div id="next-unlock-strip" class="next-strip hidden"></div>
+
+      <div class="quick-grid">
+        <button class="quick q-photo" id="qa-photo"><span>📸</span>Add a moment</button>
+        <button class="quick q-voice" id="qa-voice"><span>🎤</span>Voice note</button>
+        <button class="quick q-video" id="qa-video"><span>🎬</span>Video note</button>
+        <button class="quick q-text" id="qa-text"><span>💌</span>Little letter</button>
+      </div>
+
+      <button id="heart-btn" class="heart-big-btn">💗<span>send a heart</span></button>
+
+      <div class="card idea-card"><span id="idea-text"></span></div>
+    </section>
+
+    <!-- ~~~~ moments ~~~~ -->
+    <section id="tab-moments" class="panel hidden">
+      <div class="panel-head">
+        <h2>Our moments 📸</h2>
+        <button id="add-moment" class="btn btn-primary btn-small">+ add</button>
+      </div>
+      <div id="moments-list"></div>
+      <div id="moments-empty" class="empty hidden">
+        <div class="empty-emoji">🌸</div>
+        <p>No moments yet.<br>Add your first photo together!</p>
+      </div>
+    </section>
+
+    <!-- ~~~~ notes ~~~~ -->
+    <section id="tab-notes" class="panel hidden">
+      <div class="panel-head">
+        <h2>Love notes 💌</h2>
+        <button id="add-note" class="btn btn-primary btn-small">+ new</button>
+      </div>
+      <div class="seg">
+        <button id="seg-inbox" class="seg-btn active">For you 💝</button>
+        <button id="seg-sent" class="seg-btn">From you 📤</button>
+      </div>
+      <div id="notes-list"></div>
+      <div id="notes-empty" class="empty hidden">
+        <div class="empty-emoji">💌</div>
+        <p id="notes-empty-text">Nothing here yet…<br>send the first little surprise!</p>
+      </div>
+    </section>
+
+    <!-- ~~~~ us / settings ~~~~ -->
+    <section id="tab-us" class="panel hidden">
+      <h2>Us 💑</h2>
+      <div class="card form-card">
+        <h3>Names &amp; our date</h3>
+        <label class="field"><span>🩷 Partner one</span><input id="us-name-a" type="text" maxlength="40"></label>
+        <label class="field"><span>💜 Partner two</span><input id="us-name-b" type="text" maxlength="40"></label>
+        <label class="field"><span>💍 Our special date</span><input id="us-anniversary" type="date"></label>
+        <button id="us-save" class="btn btn-primary">Save</button>
+      </div>
+      <div class="card form-card">
+        <h3>This phone</h3>
+        <p class="soft">You are <b id="us-me">–</b> on this phone.</p>
+        <button id="us-switch" class="btn btn-ghost">Switch person</button>
+      </div>
+      <div class="card form-card">
+        <h3>Couple PIN 🔒</h3>
+        <p class="soft" id="us-pin-state"></p>
+        <label class="field"><span>New PIN (blank + save = remove)</span>
+          <input id="us-pin" type="tel" inputmode="numeric" maxlength="8" autocomplete="off"></label>
+        <button id="us-pin-save" class="btn btn-primary">Save PIN</button>
+      </div>
+      <div class="card form-card">
+        <h3>Put it on your phone 📲</h3>
+        <div id="install-steps" class="install-steps"></div>
+        <button id="install-btn" class="btn btn-primary hidden">Install app ✨</button>
+      </div>
+      <p class="footer-love">made with 💖 for the two of us · prototype v1</p>
+    </section>
+  </main>
+
+  <!-- ~~~~ tab bar ~~~~ -->
+  <nav id="tabbar">
+    <button class="tab active" data-tab="home"><span class="tab-emoji">🏠</span><span>Home</span></button>
+    <button class="tab" data-tab="moments"><span class="tab-emoji">📸</span><span>Moments</span></button>
+    <button class="tab" data-tab="notes"><span class="tab-emoji">💌</span><span>Notes</span><b id="notes-badge" class="badge hidden"></b></button>
+    <button class="tab" data-tab="us"><span class="tab-emoji">💑</span><span>Us</span></button>
+  </nav>
+</div>
+
+<!-- ============ modals ============ -->
+
+<div id="modal-upload" class="modal hidden">
+  <div class="sheet">
+    <h3 id="upload-title">Add a moment 📸</h3>
+    <div id="upload-previews" class="upload-previews"></div>
+    <label class="field"><span>Caption 💬 <em>(optional)</em></span>
+      <input id="upload-caption" type="text" maxlength="300" placeholder="little words for this memory…"></label>
+    <label class="field"><span>When was this? 🕰️</span>
+      <input id="upload-when" type="datetime-local"></label>
+    <div class="sheet-btns">
+      <button id="upload-cancel" class="btn btn-ghost">Cancel</button>
+      <button id="upload-go" class="btn btn-primary">Add 💖</button>
+    </div>
+    <div id="upload-progress" class="soft center hidden"></div>
+  </div>
+</div>
+
+<div id="modal-lightbox" class="modal dark hidden">
+  <div class="lightbox">
+    <button id="lb-close" class="lb-close">✕</button>
+    <div id="lb-img-wrap" class="lb-img-wrap"></div>
+    <div class="lb-meta">
+      <div id="lb-caption" class="lb-caption"></div>
+      <div id="lb-when" class="lb-when"></div>
+      <div id="lb-react-row" class="react-row"></div>
+      <button id="lb-delete" class="btn btn-danger btn-small">delete 🗑️</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-compose" class="modal hidden">
+  <div class="sheet">
+    <h3 id="compose-title">A little something 💌</h3>
+
+    <div id="compose-record" class="hidden">
+      <div class="rec-wrap">
+        <button id="rec-btn" class="rec-btn">🎤</button>
+        <div id="rec-timer" class="rec-timer">tap to record</div>
+      </div>
+      <button id="rec-fallback" class="btn btn-ghost btn-small hidden">choose an audio file instead 📁</button>
+    </div>
+
+    <div id="compose-video-pick" class="hidden">
+      <div class="video-pick-row">
+        <button id="vid-record" class="btn btn-primary">🎬 Record</button>
+        <button id="vid-choose" class="btn btn-ghost">📁 Choose</button>
+      </div>
+    </div>
+
+    <div id="compose-preview" class="compose-preview hidden"></div>
+
+    <div id="compose-textwrap" class="hidden">
+      <textarea id="compose-text" maxlength="4000" rows="4" placeholder="write something sweet…"></textarea>
+      <div class="emoji-row" id="emoji-row">
+        <button>💖</button><button>😘</button><button>🥰</button><button>🌙</button><button>☀️</button><button>✨</button><button>🫶</button><button>😊</button>
+      </div>
+    </div>
+
+    <label id="compose-caption-wrap" class="field hidden"><span>Add words 💬 <em>(optional)</em></span>
+      <input id="compose-caption" type="text" maxlength="300" placeholder="a caption to go with it…"></label>
+
+    <div id="compose-unlock" class="unlock-wrap hidden">
+      <div class="unlock-title">When can <b id="unlock-who">they</b> open it? ⏰</div>
+      <div class="unlock-grid">
+        <button class="unlock-opt" data-unlockopt="now">💌<span>Right away</span></button>
+        <button class="unlock-opt" data-unlockopt="hour">⏰<span>In 1 hour</span></button>
+        <button class="unlock-opt" data-unlockopt="tonight">🌙<span>Tonight 8pm</span></button>
+        <button class="unlock-opt" data-unlockopt="morning">☀️<span>Tomorrow 8am</span></button>
+      </div>
+      <label class="field"><span>📅 or pick the exact moment</span>
+        <input id="unlock-custom" type="datetime-local"></label>
+      <div id="unlock-chosen" class="unlock-chosen"></div>
+    </div>
+
+    <div class="sheet-btns">
+      <button id="compose-cancel" class="btn btn-ghost">Cancel</button>
+      <button id="compose-send" class="btn btn-primary" disabled>Seal it 💝</button>
+    </div>
+    <div id="compose-progress" class="soft center hidden"></div>
+  </div>
+</div>
+
+<div id="modal-open" class="modal hidden">
+  <div class="sheet open-sheet">
+    <div id="open-head" class="open-head"></div>
+    <div id="open-media" class="open-media"></div>
+    <div id="open-text" class="open-text hidden"></div>
+    <div class="sheet-btns">
+      <button id="open-close" class="btn btn-primary btn-big">Close 💗</button>
+    </div>
+  </div>
+</div>
+
+<input id="file-photo" type="file" accept="image/*" multiple class="hidden-input">
+<input id="file-video-rec" type="file" accept="video/*" capture="user" class="hidden-input">
+<input id="file-video" type="file" accept="video/*" class="hidden-input">
+<input id="file-audio" type="file" accept="audio/*" class="hidden-input">
+
+<div id="toasts"></div>
+<div id="fx" aria-hidden="true"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
