@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
 import sqlite3
 import threading
@@ -23,7 +24,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
-DATA_DIR = APP_DIR / "data"          # tests monkeypatch these three
+# OMY_DATA_DIR exists for always-on hosting: platforms like Render replace
+# the whole filesystem on every deploy *except* a mounted disk, so the world
+# (DB + media) must be able to live outside the repo tree. Default stays
+# next to the code for laptop use. Tests monkeypatch these three.
+DATA_DIR = Path(os.environ.get("OMY_DATA_DIR") or APP_DIR / "data")
 MEDIA_DIR = DATA_DIR / "media"
 DB_PATH = DATA_DIR / "onlymeyou.db"
 
@@ -223,6 +228,63 @@ def check_pin(pin: str | None) -> bool:
     with _conn() as db:
         row = db.execute("SELECT pin_hash FROM couple WHERE id = 1").fetchone()
     return bool(row) and secrets.compare_digest(row["pin_hash"], _hash_pin(pin))
+
+
+def pin_is_set() -> bool:
+    couple = get_couple()
+    return bool(couple and couple["has_pin"])
+
+
+# --------------------------------------------------------------------------
+# PIN brute-force throttle
+#
+# On a laptop behind home Wi-Fi the PIN mostly keeps out houseguests. On an
+# always-on public URL it is the only thing between a bot and two people's
+# private photos, and a short numeric PIN dies to brute force in minutes
+# unless guessing is expensive. Sliding-window counters: a wrong-PIN attempt
+# costs the address (and, more slowly, everyone) the right to keep guessing.
+# In-memory on purpose — a restart forgiving the counters is fine, because
+# the window is only a minute anyway.
+
+PIN_MAX_FAILS = 8            # per address per window
+PIN_GLOBAL_MAX_FAILS = 30    # across all addresses (X-Forwarded-For is spoofable)
+PIN_WINDOW_SECONDS = 60.0
+
+_GLOBAL_KEY = "*"
+_pin_fails: dict[str, list[float]] = {}
+
+
+def _recent_fails(key: str, ts: float) -> list[float]:
+    fails = [t for t in _pin_fails.get(key, ()) if ts - t < PIN_WINDOW_SECONDS]
+    if fails:
+        _pin_fails[key] = fails
+    else:
+        _pin_fails.pop(key, None)
+    return fails
+
+
+def pin_throttle_ok(ip: str, now: datetime | None = None) -> bool:
+    """May this address attempt a PIN right now?"""
+    ts = (now or utcnow()).timestamp()
+    with _write_lock:
+        if len(_recent_fails(ip, ts)) >= PIN_MAX_FAILS:
+            return False
+        return len(_recent_fails(_GLOBAL_KEY, ts)) < PIN_GLOBAL_MAX_FAILS
+
+
+def pin_throttle_note(ip: str, ok: bool, now: datetime | None = None) -> None:
+    """Record the outcome of a PIN attempt from `ip`."""
+    ts = (now or utcnow()).timestamp()
+    with _write_lock:
+        if ok:
+            _pin_fails.pop(ip, None)  # the global counter keeps its memory
+            return
+        for key in (ip, _GLOBAL_KEY):
+            _recent_fails(key, ts)
+            _pin_fails.setdefault(key, []).append(ts)
+        if len(_pin_fails) > 500:  # a bot rotating addresses, not a couple
+            for key in [k for k in _pin_fails if not _recent_fails(k, ts)]:
+                _pin_fails.pop(key, None)
 
 
 # --------------------------------------------------------------------------

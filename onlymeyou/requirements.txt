@@ -1,0 +1,5 @@
+# Only Me & You needs just the web stack — installing only these keeps a
+# hosted deploy (see render.yaml) fast and small. The repo root
+# requirements.txt is a superset; either works for running locally.
+fastapi>=0.110
+uvicorn[standard]>=0.29
