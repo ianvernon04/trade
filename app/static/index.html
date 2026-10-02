@@ -265,6 +265,18 @@
           <th>Δ shares</th><th>Θ/day $</th><th>DTE</th><th>Flags</th></tr></thead><tbody></tbody>
       </table></div>
       <p class="muted" id="pos-note"></p></div>
+    <div class="card"><h3>Import real fills from Robinhood</h3>
+      <p class="muted">Robinhood → Account → <b>Reports and Statements</b> → generate an
+      <b>account activity CSV</b> (a monthly statement PDF also works, less reliably), then drop it
+      here. Trades are paired FIFO, fees come off the P&amp;L, and re-importing an overlapping
+      date range never double-counts.</p>
+      <form id="j-import-form" class="controls-row">
+        <input type="file" id="j-import-file" accept=".csv,.pdf,.txt" required>
+        <button type="submit">Preview import</button>
+        <button type="button" id="j-import-commit" hidden>Commit these trades</button>
+        <span id="j-import-msg" class="muted"></span>
+      </form>
+      <div id="j-import-result"></div></div>
     <div class="card"><h3>Journal coach — patterns in your trading</h3>
       <div id="j-insights"><p class="muted">Loading…</p></div></div>
     <div id="j-stats" class="tiles"></div>

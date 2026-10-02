@@ -27,7 +27,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 import threading
+import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -98,6 +100,31 @@ def _conn() -> sqlite3.Connection:
 def init():
     with _lock, _conn() as c:
         c.executescript(SCHEMA)
+
+
+def report_agent_failure(agent_id: str, exc: BaseException) -> None:
+    """Make a background agent's crash visible instead of silent.
+
+    Every agent loop swallows exceptions so one bad cycle can't kill the
+    thread — correct, but it also meant a scan that failed *every* cycle
+    looked identical to one that simply had nothing to say. The agent went
+    quiet, the watchdog saw a stale timestamp, restarted the server, and the
+    reason never appeared anywhere. Days of that read as "the analyst keeps
+    hanging".
+
+    Traceback goes to stderr first, because that lands in the server log even
+    when the database is the thing that's broken — which is the failure this
+    was hiding. The event log is then best-effort: if it works the failure is
+    visible to `events`/`report` too, and if it doesn't, stderr already has it.
+    """
+    print(f"[{agent_id}] scan failed: {exc.__class__.__name__}: {exc}",
+          file=sys.stderr)
+    traceback.print_exc()
+    try:
+        log_event("note", source=agent_id,
+                  note=f"scan failed: {exc.__class__.__name__}: {exc}")
+    except Exception:
+        pass  # the store itself is unreachable; stderr above is the record
 
 
 def _now() -> str:
@@ -513,6 +540,17 @@ def messages_sent(from_agent: str, since: str | None = None, limit: int = 200) -
 # ---------- Robinhood MCP payload ingestion ----------
 
 _WRAPPER_KEYS = ("results", "orders", "positions", "fills", "holdings", "items", "data")
+# Keys that each hold their own list of positions. The Trader pulls equities
+# and options with two separate MCP tools and naturally combines them into one
+# payload — `{"equity_positions": [...], "option_positions": [...]}` — which
+# matches no single wrapper key above. Unrecognized, that whole envelope was
+# stored as one item: an event with no ticker and no quantity, which
+# `portfolio.normalize` cannot read, which counts as `unreadable`, which reads
+# as *blind*. So a clean pull of a genuinely empty account produced the one
+# state it was supposed to rule out, while the run that did it logged
+# "confirmed_empty" and moved on.
+_POSITION_LIST_KEYS = ("equity_positions", "option_positions",
+                       "stock_positions", "options_positions")
 # Marks a pull that found no positions, and the account a pull came from.
 # Underscored so they can't collide with a broker's own field names.
 EMPTY_SNAPSHOT_KEY = "_empty_snapshot"
@@ -589,6 +627,19 @@ def _unwrap(payload: Any, kind_hint: str | None,
     """
     if _depth > 3 or not isinstance(payload, dict):
         return (None, kind_hint)
+
+    # A combined equity+option pull: concatenate every position list present
+    # rather than letting the first wrapper key win, so neither half is
+    # dropped. Both being empty is meaningful — it is what a flat account
+    # looks like — so this returns an empty list, not None, and the caller
+    # turns that into an explicit confirmed-empty marker.
+    present = [k for k in _POSITION_LIST_KEYS if isinstance(payload.get(k), list)]
+    if present:
+        items: list = []
+        for k in present:
+            items.extend(payload[k])
+        return (items, "positions")
+
     for k in _WRAPPER_KEYS:
         v = payload.get(k)
         if isinstance(v, list):
@@ -645,7 +696,18 @@ def ingest(payload: Any, source: str = "robinhood-mcp",
             marker[ACCOUNT_KEY] = str(account)
         ev = log_event("position", source=source, payload=marker,
                        note="empty position pull — account holds nothing", ts=ts)
-        return {"stored": 1, "event_ids": [ev["id"]], "kinds": {"position": 1}}
+        return {"stored": 1, "event_ids": [ev["id"]], "kinds": {"position": 1},
+                "empty_marker": True}
+
+    if not items:
+        # An empty payload whose kind nobody could name. Storing nothing would
+        # leave the previous snapshot standing as though still current, and
+        # storing a marker would assert a flat book this can't actually vouch
+        # for. Report the ambiguity instead of picking one.
+        return {"stored": 0, "event_ids": [], "kinds": {}, "empty_marker": False,
+                "warning": "payload contained no items and no recognizable kind — "
+                           "nothing was recorded; pass --kind positions if this was "
+                           "an empty position pull"}
 
     stored, kinds = [], {}
     for item in items:
@@ -655,7 +717,8 @@ def ingest(payload: Any, source: str = "robinhood-mcp",
         ev = log_event(kind, ticker=ticker, source=source, note=note, payload=item, ts=ts)
         stored.append(ev["id"])
         kinds[kind] = kinds.get(kind, 0) + 1
-    return {"stored": len(stored), "event_ids": stored, "kinds": kinds}
+    return {"stored": len(stored), "event_ids": stored, "kinds": kinds,
+            "empty_marker": False}
 
 
 # ---------- export ----------

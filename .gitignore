@@ -25,3 +25,7 @@ backup*.json
 # Only Me & You keeps its whole world (SQLite DB + photos/voice/video) here.
 # It is personal media belonging to two real people — never commit it.
 onlymeyou/data/
+
+# real broker exports never get committed
+robinhood-activity.csv
+*.activity.csv

@@ -33,7 +33,12 @@ CREATE TABLE IF NOT EXISTS trades (
     status TEXT NOT NULL DEFAULT 'open',           -- open | closed
     setup TEXT,                                     -- what signal triggered it
     notes TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    source TEXT,                                    -- NULL = typed by hand; else the import it came from
+    broker_ref TEXT,                                -- fingerprint of the fills behind an imported trade
+    fees REAL,                                      -- broker fees on the round trip
+    needs_review INTEGER DEFAULT 0,                 -- 1 = imported but not fully trustworthy
+    review_note TEXT                                -- why it needs review
 );
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,12 +72,29 @@ def _conn() -> sqlite3.Connection:
     return c
 
 
+# Columns added after the first release. SQLite has no "ADD COLUMN IF NOT
+# EXISTS", so every one of these is applied by hand against PRAGMA table_info.
+_ADDED_COLUMNS = {
+    "user_id": "INTEGER",
+    "source": "TEXT",
+    "broker_ref": "TEXT",
+    "fees": "REAL",
+    "needs_review": "INTEGER DEFAULT 0",
+    "review_note": "TEXT",
+}
+
+
 def init():
     with _lock, _conn() as c:
         c.executescript(SCHEMA)
         cols = [r[1] for r in c.execute("PRAGMA table_info(trades)")]
-        if "user_id" not in cols:  # migrate pre-account databases
-            c.execute("ALTER TABLE trades ADD COLUMN user_id INTEGER")
+        for name, decl in _ADDED_COLUMNS.items():  # migrate older databases
+            if name not in cols:
+                c.execute(f"ALTER TABLE trades ADD COLUMN {name} {decl}")
+        # One imported round trip = one row. The index makes the duplicate check
+        # on re-import a lookup instead of a scan.
+        c.execute("CREATE INDEX IF NOT EXISTS idx_trades_broker_ref "
+                  "ON trades (user_id, broker_ref)")
 
 
 # ---------- accounts ----------
@@ -137,16 +159,52 @@ def user_for_token(token: str) -> dict | None:
 # ---------- trades (always scoped to a user) ----------
 
 def _pnl(row: dict) -> float | None:
+    """Net P&L: gross move minus whatever the broker took.
+
+    Hand-typed trades carry no fees (NULL) and are unaffected. Imported trades
+    carry the real commissions and regulatory fees off the statement, because a
+    track record shown to anyone else has to be net, not gross.
+    """
     if row["exit_price"] is None:
         return None
     sign = 1 if row["direction"] == "long" else -1
     mult = MULT.get(row["instrument"], 100)
-    return round(sign * (row["exit_price"] - row["entry_price"]) * row["quantity"] * mult, 2)
+    gross = sign * (row["exit_price"] - row["entry_price"]) * row["quantity"] * mult
+    try:  # rows from callers that predate the fees column
+        fees = row["fees"] or 0.0
+    except (KeyError, IndexError):
+        fees = 0.0
+    return round(gross - fees, 2)
+
+
+def first_user_id() -> int | None:
+    """The oldest account — the CLI's default when nobody passes --user-id.
+
+    The owner's install has exactly one account; making him look up an integer
+    to import his own statements would be theatre.
+    """
+    with _conn() as c:
+        row = c.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+        return row["id"] if row else None
+
+
+def existing_broker_refs(user_id: int) -> set[str]:
+    """Fingerprints of trades already imported for this user.
+
+    The importer checks this before writing so an overlapping export — the
+    normal case when you pull the last 90 days every month — adds only what is
+    genuinely new.
+    """
+    with _conn() as c:
+        return {r[0] for r in c.execute(
+            "SELECT broker_ref FROM trades WHERE user_id = ? AND broker_ref IS NOT NULL",
+            (user_id,))}
 
 
 def add_trade(t: dict, user_id: int) -> dict:
     fields = ["ticker", "instrument", "direction", "quantity", "strike", "expiry",
-              "entry_price", "entry_date", "exit_price", "exit_date", "setup", "notes"]
+              "entry_price", "entry_date", "exit_price", "exit_date", "setup", "notes",
+              "source", "broker_ref", "fees", "needs_review", "review_note"]
     values = {f: t.get(f) for f in fields}
     values["ticker"] = (values["ticker"] or "").upper().strip()
     values["status"] = "closed" if values.get("exit_price") is not None else "open"
@@ -211,6 +269,7 @@ def list_trades(user_id: int, status: str | None = None) -> list[dict]:
 def stats(user_id: int) -> dict:
     closed = [t for t in list_trades(user_id, "closed") if t["pnl"] is not None]
     open_trades = list_trades(user_id, "open")
+    everything = closed + open_trades
     pnls = [t["pnl"] for t in closed]
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p <= 0]
@@ -238,6 +297,12 @@ def stats(user_id: int) -> dict:
         "worst_trade": min(pnls) if pnls else None,
         "pnl_by_ticker": by_ticker,
         "equity_curve": curve,
+        # Provenance: how much of this record is the broker's word vs. the
+        # owner's typing, and how much of it is still unverified.
+        "imported_trades": sum(1 for t in everything if t.get("source")),
+        "manual_trades": sum(1 for t in everything if not t.get("source")),
+        "needs_review": sum(1 for t in everything if t.get("needs_review")),
+        "total_fees": round(sum(t.get("fees") or 0.0 for t in everything), 2),
     }
 
 

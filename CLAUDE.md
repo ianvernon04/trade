@@ -14,7 +14,13 @@ every action and every call you make so the system can grade itself.
   composite score in [-100, +100] with per-component votes
 - `app/options.py` — chain analytics, greeks, IV context, CALL/PUT/NO TRADE rec
 - `app/backtest.py`, `app/scorecard.py` — historical validation of the same signal
-- `app/journal.py` — the human's manual UI journal (per-user, auth'd)
+- `app/journal.py` — the human's journal (per-user, auth'd). Trades carry
+  provenance: `source` (NULL = typed by hand), `broker_ref`, `fees`,
+  `needs_review`. P&L is **net of fees**.
+- `app/brokerimport.py` — turns a Robinhood activity CSV (or statement PDF)
+  into fills, pairs them FIFO into round trips, and writes them to the journal.
+  Nothing is dropped silently: unpairable fills land flagged `needs_review`.
+  Re-importing an overlapping export dedupes on `broker_ref`.
 - `app/tracking.py` — **the agents' memory**: every event, decision, and graded
   outcome, plus the inter-agent message bus (tables `agent_events` /
   `agent_decisions` / `agent_messages` in `journal.db`)
@@ -220,12 +226,28 @@ above instead; autonomous mode is the exception, not the default.
 2. **Check for standing risk, then read the mail — in that order:**
 
    ```
-   python3 -m app alerts --agent trader --hours 12 --from analyst
+   python3 -m app alerts --agent trader --hours 12 --from analyst --gate
    ```
 
    Exit 0 = clear, **exit 1 = no new positions this run**: log a note naming
    the alerts and stop. With nobody watching, news risk is a reason to sit
    out, never a judgment call to trade through.
+
+   `--gate` applies the policy in `app/gate.py`, which distinguishes risk
+   from weather. **Blocking:** any alert naming a ticker (negative news
+   cluster), any macro topic clearing 6+ headlines in one scan (a storm, not
+   chatter), any scheduled FOMC/CPI day or the day before it (from
+   `app/calendar_events.py`), and anything the policy can't classify — that
+   last one fails closed. **Not blocking:** ambient macro alerts (the 2-5
+   headline "Fed/CPI/tariffs exist" hum) — the run logs them and proceeds.
+   Nineteen consecutive runs once stood down on that hum; a gate that never
+   opens provides no safety the $300 cap wasn't already providing, it only
+   hides whether the rest of the system works. If the Analyst is stale,
+   `--gate` first runs one synchronous news scan itself (self-heal) and only
+   stands down if the scan fails or the data is still stale — a napping
+   background thread is a thing to fix in-line, not a reason to skip the day.
+   The old blunt behavior (any high-priority alert blocks) remains the
+   default without `--gate`, for humans asking "is anything on fire?".
 
    **This is the gate, not `inbox --unread`.** The rule is about alerts
    landing inside a 12-hour window, and `--unread` answers a different
@@ -383,6 +405,8 @@ python3 -m app scan [--tickers AAPL,MSFT,...] [--json]  # rank today's setups (a
 python3 -m app evaluate [--period 1y]        # grade matured decisions
 python3 -m app report [--days 30]            # activity + track record
 python3 -m app events / decisions [--pending] [--json]
+python3 -m app import-broker --file activity.csv [--user-id N] [--commit]
+                                             # real Robinhood fills → journal; dry run without --commit
 python3 -m app export --out backup.json      # journal.db is gitignored — this is the backup
 python3 -m app autonomy status               # unattended-trading policy + today's usage
 python3 -m app autonomy enable | disable     # the kill switch

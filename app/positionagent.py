@@ -311,8 +311,8 @@ def _loop():
     while True:
         try:
             run_scan()
-        except Exception:
-            pass  # fail soft; next cycle retries
+        except Exception as e:
+            tracking.report_agent_failure(AGENT_ID, e)  # fail soft, but on the record
         time.sleep(CHECK_INTERVAL)
 
 
