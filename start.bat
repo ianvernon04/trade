@@ -1,7 +1,7 @@
 @echo off
-rem Options Trading Assistant - Windows launcher. Double-click to run.
+rem New World Logic - Windows launcher. Double-click to run.
 cd /d "%~dp0"
-title Options Trading Assistant
+title New World Logic
 
 rem Find Python (py launcher first, then python)
 set PY=py

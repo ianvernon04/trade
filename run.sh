@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the Options Trading Assistant.
+# Start the New World Logic app.
 set -e
 cd "$(dirname "$0")"
 pip install -q -r requirements.txt

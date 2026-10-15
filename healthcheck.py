@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Health check for the Options Trading Assistant.
+"""Health check for the New World Logic app.
 
 Exercises every data path against LIVE data and reports failures. Designed
 for a daily pre-market run so problems surface before they matter.
@@ -220,7 +220,7 @@ def run_remote_check(url: str):
             body = r.read(4000).decode("utf-8", "replace")
             if r.status != 200:
                 raise AssertionError(f"HTTP {r.status}")
-            if "Options Trading Assistant" not in body:
+            if "New World Logic" not in body:
                 raise AssertionError("page loaded but content looks wrong")
         took = time.time() - start
         if took > 25:
@@ -247,7 +247,7 @@ def main():
     ap.add_argument("--trace", action="store_true", help="print tracebacks on failure")
     args = ap.parse_args()
 
-    print(f"Options Trading Assistant — health check  {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"New World Logic — health check  {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 72)
 
     global OFFLINE

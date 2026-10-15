@@ -1,4 +1,4 @@
-/* Options Trading Assistant — frontend. Plain JS, no dependencies. */
+/* New World Logic — frontend. Plain JS, no dependencies. */
 "use strict";
 
 const $ = (sel) => document.querySelector(sel);

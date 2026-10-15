@@ -1,4 +1,4 @@
-# Options Trading Assistant
+# New World Logic
 
 A self-hosted, auto-refreshing web app that acts as a trading co-pilot for
 options (and stocks): live market data, technical buy/sell signals, options

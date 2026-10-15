@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Options Trading Assistant - macOS launcher. Double-click to run.
+# New World Logic - macOS launcher. Double-click to run.
 cd "$(dirname "$0")"
 
 if ! command -v python3 >/dev/null 2>&1; then

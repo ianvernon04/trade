@@ -1,4 +1,4 @@
-"""FastAPI server for the options trading assistant.
+"""FastAPI server for the New World Logic app.
 
 Run with:  uvicorn app.main:app --reload   (or ./run.sh)
 Then open  http://127.0.0.1:8000
@@ -39,7 +39,7 @@ class SafeJSONResponse(JSONResponse):
         return super().render(_json_safe(content))
 
 
-app = FastAPI(title="Options Trading Assistant", default_response_class=SafeJSONResponse)
+app = FastAPI(title="New World Logic", default_response_class=SafeJSONResponse)
 journal.init()
 tracking.init()
 alerts.start_background_thread()
@@ -69,7 +69,7 @@ async def _basic_auth(request: Request, call_next):
         if not ok:
             return Response(
                 status_code=401,
-                headers={"WWW-Authenticate": 'Basic realm="Options Trading Assistant"'},
+                headers={"WWW-Authenticate": 'Basic realm="New World Logic"'},
             )
     return await call_next(request)
 

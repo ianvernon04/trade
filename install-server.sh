@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the Options Trading Assistant in the background on macOS — no terminal
+# Run the New World Logic app in the background on macOS — no terminal
 # window needed. Installs a LaunchAgent that starts the server at login,
 # keeps it running, and restarts it if it crashes.
 #
