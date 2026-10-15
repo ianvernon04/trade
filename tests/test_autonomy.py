@@ -54,13 +54,14 @@ class TestKillSwitch(GateTestCase):
 
 class TestCaps(GateTestCase):
     def test_per_trade_cap(self):
-        order = {**LONG_CALL, "est_cost": 900, "max_loss": 900}
+        order = {**LONG_CALL, "limit_price": 4.50, "est_cost": 900, "max_loss": 900}
         v = autonomy.check_order(order, policy=self.enabled(), now=NOW)
         self.assertFalse(v["allowed"])
+        self.assertEqual(v["computed_cost_usd"], 900)
         self.assertTrue(any("exceeds the per-trade" in r for r in v["reasons"]))
 
     def test_cap_boundary_is_inclusive(self):
-        order = {**LONG_CALL, "est_cost": 300, "max_loss": 300}
+        order = {**LONG_CALL, "limit_price": 1.50, "est_cost": 300, "max_loss": 300}
         self.assertTrue(autonomy.check_order(order, policy=self.enabled(), now=NOW)["allowed"])
 
     def test_daily_cap_counts_only_autonomous_orders(self):
@@ -97,11 +98,14 @@ class TestRiskClassification(GateTestCase):
         self.assertTrue(any("undefined-risk" in r for r in v["reasons"]))
 
     def test_naked_allowed_when_policy_permits_but_warns_loudly(self):
-        order = {"ticker": "NVDA", "strategy": "naked_short_put", "quantity": 1,
-                 "max_loss": 250}
+        order = {"ticker": "NVDA", "strategy": "naked_short_put", "side": "sell",
+                 "quantity": 1, "strike": 2.5, "expiry": "2026-09-18",
+                 "limit_price": 0.30, "max_loss": 250}
         v = autonomy.check_order(order, policy=self.enabled(defined_risk_only=False), now=NOW)
         self.assertTrue(v["allowed"], v["reasons"])
         self.assertTrue(any("UNDEFINED RISK" in w for w in v["warnings"]))
+        # Not a long strategy: the caller's max_loss is still the measure.
+        self.assertEqual(v["worst_case_usd"], 250)
 
     def test_unknown_strategy_fails_closed(self):
         order = {"ticker": "NVDA", "strategy": "some_new_thing", "max_loss": 50}
@@ -110,7 +114,8 @@ class TestRiskClassification(GateTestCase):
         self.assertFalse(v["allowed"])
 
     def test_explicit_defined_risk_flag_wins(self):
-        order = {"ticker": "NVDA", "strategy": "mystery", "defined_risk": True, "max_loss": 50}
+        order = {"ticker": "NVDA", "strategy": "mystery", "defined_risk": True,
+                 "quantity": 10, "limit_price": 5, "max_loss": 50}
         v = autonomy.check_order(order, policy=self.enabled(), now=NOW)
         self.assertEqual(v["risk_kind"], "defined")
         self.assertTrue(v["allowed"], v["reasons"])
@@ -221,14 +226,209 @@ class TestPolicyPersistence(GateTestCase):
         self.assertEqual(p["allowed_strategies"], ["long_call", "long_put"])
 
 
+class TestOrderShape(GateTestCase):
+    """The gate computes the worst case itself and refuses any order shape
+    whose worst case it cannot compute. These include the three audit repros
+    that the old, caller-trusting gate let through."""
+
+    def deny(self, order, needle, **policy):
+        v = autonomy.check_order(order, policy=self.enabled(**policy), now=NOW)
+        self.assertFalse(v["allowed"], f"expected denial for {order}")
+        self.assertTrue(any(needle in r for r in v["reasons"]),
+                        f"no reason containing {needle!r} in {v['reasons']}")
+        return v
+
+    # --- audit repro 1: a $20,000 order claiming max_loss 0 ---
+    def test_zero_max_loss_on_huge_order_denied(self):
+        order = {"ticker": "NVDA", "strategy": "long_call", "side": "buy", "quantity": 50,
+                 "expiry": "2026-09-18", "limit_price": 4.0, "max_loss": 0}
+        v = self.deny(order, "not positive")
+        self.assertEqual(v["computed_cost_usd"], 20000)
+        self.assertEqual(v["worst_case_usd"], 20000)
+        self.assertTrue(any("exceeds the per-trade" in r for r in v["reasons"]))
+
+    # --- audit repro 2: selling on a "long" strategy ---
+    def test_sell_side_on_long_strategy_denied(self):
+        self.deny({**LONG_CALL, "side": "sell"}, "side must be 'buy'")
+        self.deny({k: v for k, v in LONG_CALL.items() if k != "side"}, "side must be 'buy'")
+
+    # --- audit repro 3: market orders and GTC ---
+    def test_market_order_denied(self):
+        self.deny({**LONG_CALL, "order_type": "market"}, "order_type 'market'")
+
+    def test_gtc_denied(self):
+        self.deny({**LONG_CALL, "time_in_force": "gtc"}, "time_in_force 'gtc'")
+
+    def test_missing_order_type_and_tif_default_to_limit_day(self):
+        v = autonomy.check_order(LONG_CALL, policy=self.enabled(), now=NOW)
+        self.assertTrue(v["allowed"], v["reasons"])
+        self.assertEqual((v["order_type"], v["time_in_force"]), ("limit", "day"))
+        gfd = {**LONG_CALL, "order_type": "LIMIT", "time_in_force": "gfd"}
+        self.assertTrue(autonomy.check_order(gfd, policy=self.enabled(), now=NOW)["allowed"])
+
+    def test_understated_max_loss_denied(self):
+        # 1.20 × 2 × 100 = 240; claiming 100 is a lie the gate must catch.
+        v = self.deny({**LONG_CALL, "max_loss": 100}, "understates")
+        self.assertEqual(v["worst_case_usd"], 240)
+
+    def test_overstated_max_loss_is_fine_but_cost_is_the_measure(self):
+        v = autonomy.check_order({**LONG_CALL, "max_loss": 260}, policy=self.enabled(), now=NOW)
+        self.assertTrue(v["allowed"], v["reasons"])
+        self.assertEqual(v["worst_case_usd"], 240)
+        self.assertEqual(v["claimed_max_loss_usd"], 260)
+
+    def test_rounding_tolerance_on_max_loss(self):
+        self.assertTrue(autonomy.check_order({**LONG_CALL, "max_loss": 239.995},
+                                             policy=self.enabled(), now=NOW)["allowed"])
+
+    def test_est_cost_alone_no_longer_satisfies_max_loss(self):
+        order = {k: v for k, v in LONG_CALL.items() if k != "max_loss"}
+        self.deny(order, "no max_loss given")
+
+    def test_bad_quantity_denied(self):
+        for q in (0, -1, "two", None, float("nan"), True):
+            self.deny({**LONG_CALL, "quantity": q}, "quantity must be a number")
+        self.deny({**LONG_CALL, "quantity": 1.5}, "whole number of contracts")
+
+    def test_fractional_shares_allowed_for_stock(self):
+        order = {"ticker": "AAPL", "strategy": "stock", "side": "buy", "quantity": 0.5,
+                 "limit_price": 200, "max_loss": 100}
+        v = autonomy.check_order(order, policy=self.enabled(), now=NOW)
+        self.assertTrue(v["allowed"], v["reasons"])
+        self.assertEqual(v["computed_cost_usd"], 100)
+        self.assertFalse(v["is_option"])
+
+    def test_bad_limit_price_denied(self):
+        for p in (0, -4, "x", None, float("inf")):
+            self.deny({**LONG_CALL, "limit_price": p}, "limit_price must be a number")
+
+    def test_stock_cost_uses_no_multiplier(self):
+        order = {"ticker": "AAPL", "strategy": "long_stock", "side": "buy", "quantity": 2,
+                 "limit_price": 100, "max_loss": 200}
+        v = autonomy.check_order(order, policy=self.enabled(), now=NOW)
+        self.assertTrue(v["allowed"], v["reasons"])
+        self.assertEqual(v["computed_cost_usd"], 200)
+        self.assertEqual(v["multiplier"], 1)
+
+    def test_expiry_required_and_must_be_future(self):
+        self.deny({k: v for k, v in LONG_CALL.items() if k != "expiry"}, "must state an expiry")
+        self.deny({**LONG_CALL, "expiry": "2026-08-05"}, "today or in the past")   # 0DTE
+        self.deny({**LONG_CALL, "expiry": "2026-08-01"}, "today or in the past")
+        self.deny({**LONG_CALL, "expiry": "Sept 18"}, "not a YYYY-MM-DD date")
+        tomorrow = {**LONG_CALL, "expiry": "2026-08-06"}
+        self.assertTrue(autonomy.check_order(tomorrow, policy=self.enabled(), now=NOW)["allowed"])
+
+    def test_nan_max_loss_is_unbounded(self):
+        v = self.deny({**LONG_CALL, "max_loss": float("nan")}, "unbounded")
+        self.assertEqual(v["claimed_max_loss_usd"], "unbounded")
+
+    def test_result_exposes_computed_numbers(self):
+        v = autonomy.check_order(LONG_CALL, policy=self.enabled(), now=NOW)
+        self.assertEqual(v["quantity"], 2)
+        self.assertEqual(v["limit_price"], 1.2)
+        self.assertEqual(v["multiplier"], 100)
+        self.assertEqual(v["computed_cost_usd"], 240)
+        self.assertEqual(v["expiry"], "2026-09-18")
+        self.assertTrue(v["is_option"])
+
+
 class TestRecording(GateTestCase):
     def test_recorded_order_is_auditable(self):
-        autonomy.record_autonomous_order(LONG_CALL)
+        ev = autonomy.record_autonomous_order(LONG_CALL)
+        self.assertIn("warning", ev["note"])  # no reservation → flagged, still counted
         ev = tracking.list_events(kind="order")[0]
         self.assertEqual(ev["source"], "autonomous")
         self.assertEqual(ev["ticker"], "NVDA")
         self.assertIn("NVDA", ev["note"])
         self.assertEqual(ev["payload"]["strike"], 185)
+        self.assertEqual(autonomy.trades_today(), 1)  # stamped now → counts today
+
+
+class TestReservation(GateTestCase):
+    """The slot is taken before the broker call and survives a crash."""
+
+    def test_reserve_then_record_counts_once(self):
+        policy = self.enabled(max_trades_per_day=2)
+        res = autonomy.reserve_slot(LONG_CALL, policy=policy, now=NOW)
+        self.assertTrue(res["reserved"], res["reasons"])
+        rid = res["reservation_id"]
+        self.assertIsInstance(rid, int)
+        self.assertEqual(autonomy.trades_today(NOW), 1)
+        row = tracking.list_events(kind="order")[0]
+        self.assertEqual(row["id"], rid)
+        self.assertEqual(row["payload"]["status"], "reserved")
+        self.assertEqual(row["payload"]["ticker"], "NVDA")
+
+        ev = autonomy.record_autonomous_order(LONG_CALL, payload={"id": "rh-1", "state": "queued"},
+                                              reservation_id=rid)
+        self.assertEqual(ev["id"], rid)
+        self.assertEqual(autonomy.trades_today(NOW), 1)   # still one row
+        rows = tracking.list_events(kind="order")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["payload"]["status"], "placed")
+        self.assertEqual(rows[0]["payload"]["broker_result"]["id"], "rh-1")
+        self.assertEqual(rows[0]["payload"]["strike"], 185)
+        self.assertNotIn("warning", rows[0]["note"])
+
+    def test_record_without_order_uses_reserved_order(self):
+        rid = autonomy.reserve_slot(LONG_CALL, policy=self.enabled(), now=NOW)["reservation_id"]
+        ev = autonomy.record_autonomous_order(None, payload={"id": "rh-2"}, reservation_id=rid)
+        self.assertEqual(ev["payload"]["ticker"], "NVDA")
+        self.assertEqual(ev["payload"]["broker_result"], {"id": "rh-2"})
+
+    def test_reserve_then_release_does_not_count(self):
+        res = autonomy.reserve_slot(LONG_CALL, policy=self.enabled(), now=NOW)
+        self.assertEqual(autonomy.trades_today(NOW), 1)
+        out = autonomy.release_slot(res["reservation_id"], "broker tool unavailable")
+        self.assertTrue(out["released"])
+        self.assertEqual(autonomy.trades_today(NOW), 0)
+        row = tracking.list_events(kind="order")[0]
+        self.assertEqual(row["payload"]["status"], "released")
+        self.assertEqual(row["payload"]["release_reason"], "broker tool unavailable")
+        self.assertIn("RELEASED", row["note"])
+        # The slot is free again.
+        self.assertTrue(autonomy.check_order(LONG_CALL, policy=self.enabled(), now=NOW)["allowed"])
+        # Idempotent.
+        self.assertTrue(autonomy.release_slot(res["reservation_id"], "again")["already"])
+
+    def test_crashed_reservation_still_counts(self):
+        # Reserve, then "crash": never record, never release.
+        autonomy.reserve_slot(LONG_CALL, policy=self.enabled(), now=NOW)
+        self.assertEqual(autonomy.trades_today(NOW), 1)
+        v = autonomy.check_order(LONG_CALL, policy=self.enabled(), now=NOW)
+        self.assertFalse(v["allowed"])
+        self.assertTrue(any("daily autonomous trade cap" in r for r in v["reasons"]))
+        second = autonomy.reserve_slot(LONG_CALL, policy=self.enabled(), now=NOW)
+        self.assertFalse(second["reserved"])
+        self.assertIsNone(second["reservation_id"])
+
+    def test_placed_reservation_cannot_be_released(self):
+        rid = autonomy.reserve_slot(LONG_CALL, policy=self.enabled(), now=NOW)["reservation_id"]
+        autonomy.record_autonomous_order(LONG_CALL, payload={"id": "x"}, reservation_id=rid)
+        out = autonomy.release_slot(rid, "oops")
+        self.assertFalse(out["released"])
+        self.assertEqual(autonomy.trades_today(NOW), 1)
+
+    def test_release_unknown_reservation_raises(self):
+        with self.assertRaises(ValueError):
+            autonomy.release_slot(999, "nope")
+
+    def test_denied_order_never_reserves(self):
+        res = autonomy.reserve_slot({**LONG_CALL, "side": "sell"}, policy=self.enabled(), now=NOW)
+        self.assertFalse(res["reserved"])
+        self.assertEqual(tracking.list_events(kind="order"), [])
+        self.assertTrue(any("side must be 'buy'" in r for r in res["reasons"]))
+
+    def test_record_with_missing_reservation_falls_back_with_warning(self):
+        ev = autonomy.record_autonomous_order(LONG_CALL, payload={"id": "x"}, reservation_id=4242)
+        self.assertIn("4242", ev["note"])
+        self.assertIn("warning", ev["note"])
+        self.assertEqual(len(tracking.list_events(kind="order")), 1)
+
+    def test_legacy_rows_without_status_count(self):
+        tracking.log_event("order", ticker="NVDA", source=autonomy.AUTONOMOUS_SOURCE,
+                           ts="2026-08-05T10:00:00Z", payload="raw text")
+        self.assertEqual(autonomy.trades_today(NOW), 1)
 
 
 if __name__ == "__main__":

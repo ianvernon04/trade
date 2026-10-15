@@ -20,9 +20,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (alerts, backtest, calendar_events, data, journal, news, newsagent,
-               options, patternagent, positionagent, positions, riskagent, scanner,
-               scorecard, tracking, trend)
+from . import (alerts, backtest, brokerimport, calendar_events, data, journal, news,
+               newsagent, options, patternagent, positionagent, positions, riskagent,
+               scanner, scorecard, tracking, trend)
 from .signals import score_frame, score_series
 
 
@@ -469,6 +469,41 @@ def journal_stats(user: dict = Depends(current_user)):
 @app.get("/api/journal/insights")
 def journal_insights(user: dict = Depends(current_user)):
     return journal.insights(user["id"])
+
+
+class BrokerImportIn(BaseModel):
+    """A statement upload.
+
+    The file arrives base64-encoded in JSON rather than as multipart form data
+    on purpose: multipart would add a `python-multipart` dependency to a server
+    the owner runs himself, and the whole point of this endpoint is that it
+    keeps working on a plain install.
+    """
+
+    filename: str = "activity.csv"
+    content_b64: str
+    dry_run: bool = True
+
+
+@app.post("/api/journal/import")
+def journal_import(payload: BrokerImportIn, user: dict = Depends(current_user)):
+    """Import real broker fills. Defaults to a dry run — preview, then commit."""
+    try:
+        raw = base64.b64decode(payload.content_b64, validate=False)
+    except Exception:
+        raise HTTPException(400, "upload was not valid base64")
+    if len(raw) > 25_000_000:
+        raise HTTPException(413, "file too large — export a narrower date range")
+    try:
+        summary = brokerimport.import_file(
+            content=raw, filename=payload.filename,
+            user_id=user["id"], dry_run=payload.dry_run)
+    except brokerimport.ImportError_ as e:
+        raise HTTPException(400, str(e))
+    # The full trade list is useful in a preview and noise once committed.
+    if not payload.dry_run:
+        summary.pop("trades", None)
+    return summary
 
 
 @app.get("/api/positions")

@@ -1121,6 +1121,9 @@ async function loadJournal() {
       ["Avg loss", fmt$(stats.avg_loss)],
       ["Profit factor", stats.profit_factor ?? "–"],
       ["Best / worst", `${fmt$(stats.best_trade)} / ${fmt$(stats.worst_trade)}`],
+      // Provenance: broker-verified rows are the ones a client can be shown.
+      ["Broker-verified / typed", `${stats.imported_trades ?? 0} / ${stats.manual_trades ?? 0}`],
+      ["Needs review", stats.needs_review ?? 0],
     ].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
     if (stats.equity_curve.length) {
       drawChart("chart-pnl", stats.equity_curve.map(p => p.date || ""),
@@ -1128,7 +1131,9 @@ async function loadJournal() {
         { refLines: [{ value: 0, color: COLORS.baseline }] });
     }
     $("#j-table tbody").innerHTML = list.trades.map(t => `
-      <tr><td><b>${t.ticker}</b></td><td>${t.instrument}${t.direction === "short" ? " (short)" : ""}</td>
+      <tr><td><b>${t.ticker}</b>${t.source ? ' <span class="pill" title="imported from a broker statement">✓</span>' : ""}${
+        t.needs_review ? ` <span class="warn-text" title="${(t.review_note || "").replace(/"/g, "&quot;")}">⚠</span>` : ""}</td>
+      <td>${t.instrument}${t.direction === "short" ? " (short)" : ""}</td>
       <td>${t.quantity}</td><td>${t.strike ?? "–"}</td>
       <td>${fmt$(t.entry_price)}</td><td>${t.entry_date}</td>
       <td>${t.exit_price === null ? '<span class="pill NEUTRAL">open</span>' : fmt$(t.exit_price)}</td>
@@ -1161,6 +1166,82 @@ $("#j-form").addEventListener("submit", async (e) => {
   if (r.ok) { e.target.reset(); loadJournal(); }
   else alert("Save failed: " + ((await r.json()).detail || r.statusText));
 });
+
+/* ---------------- broker statement import ---------------- */
+// Two-step on purpose: preview first, commit second. Nothing touches the
+// journal until the numbers on screen match what the broker says.
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(new Error("could not read that file"));
+    r.readAsDataURL(file);
+  });
+}
+
+async function runImport(dryRun) {
+  const input = $("#j-import-file");
+  const file = input.files && input.files[0];
+  if (!file) { $("#j-import-msg").textContent = "pick a file first"; return; }
+
+  $("#j-import-msg").textContent = dryRun ? "reading…" : "importing…";
+  try {
+    const r = await fetch("/api/journal/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({
+        filename: file.name,
+        content_b64: await fileToBase64(file),
+        dry_run: dryRun,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+
+    const [lo, hi] = d.date_range || ["?", "?"];
+    $("#j-import-msg").textContent = "";
+    $("#j-import-commit").hidden = !d.dry_run || d.new_trades === 0;
+    $("#j-import-result").innerHTML = `
+      <div class="tiles">
+        <div class="tile"><div class="k">Fills parsed</div><div class="v">${d.fills_parsed}</div></div>
+        <div class="tile"><div class="k">New trades</div><div class="v">${d.new_trades}</div></div>
+        <div class="tile"><div class="k">Closed / open</div><div class="v">${d.closed} / ${d.open}</div></div>
+        <div class="tile"><div class="k">Net P&L</div>
+          <div class="v ${d.net_pnl >= 0 ? "up" : "down"}">${fmt$(d.net_pnl)}</div></div>
+        <div class="tile"><div class="k">Fees</div><div class="v">${fmt$(d.total_fees)}</div></div>
+        <div class="tile"><div class="k">Already imported</div><div class="v">${d.skipped_duplicates}</div></div>
+      </div>
+      <p class="muted">${lo} → ${hi} · ${d.tickers.length} tickers${
+        d.needs_review ? ` · <span class="warn-text">${d.needs_review} need review</span>` : ""}</p>
+      ${d.dry_run ? `<p class="muted">Nothing written yet — check the rows below, then commit.</p>` : ""}
+      ${(d.trades || []).length ? `<div class="scroll"><table>
+        <thead><tr><th>Ticker</th><th>Position</th><th>Qty</th><th>Entry</th><th>Exit</th>
+          <th>P&L</th><th>Flag</th></tr></thead><tbody>
+        ${d.trades.map(t => `<tr>
+          <td><b>${t.ticker}</b></td>
+          <td>${t.direction === "short" ? "short " : ""}${t.instrument}${t.strike ? " $" + t.strike : ""}${t.expiry ? " " + t.expiry : ""}</td>
+          <td>${t.quantity}</td>
+          <td>${fmt$(t.entry_price)} <span class="muted">${t.entry_date}</span></td>
+          <td>${t.exit_price === null ? '<span class="pill NEUTRAL">open</span>'
+                : `${fmt$(t.exit_price)} <span class="muted">${t.exit_date}</span>`}</td>
+          <td class="${(t.pnl ?? 0) >= 0 ? "up" : "down"}">${t.pnl === null ? "–" : fmt$(t.pnl)}</td>
+          <td class="warn-text">${t.needs_review ? t.review_note : ""}</td></tr>`).join("")}
+        </tbody></table></div>` : ""}`;
+
+    if (!d.dry_run) {
+      $("#j-import-msg").textContent = `imported ${d.written} trades`;
+      $("#j-import-file").value = "";
+      loadJournal();
+    }
+  } catch (e) {
+    $("#j-import-msg").innerHTML = `<span class="err">${e.message}</span>`;
+    $("#j-import-commit").hidden = true;
+  }
+}
+
+$("#j-import-form").addEventListener("submit", (e) => { e.preventDefault(); runImport(true); });
+$("#j-import-commit").addEventListener("click", () => runImport(false));
 
 /* ---------------- live positions + coach ---------------- */
 

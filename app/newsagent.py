@@ -188,8 +188,11 @@ def _loop():
     while True:
         try:
             run_scan()
-        except Exception:
-            pass  # feeds fail soft; next cycle retries
+        except Exception as e:
+            # Feeds fail soft and the next cycle retries — but the reason is
+            # recorded, so a scan failing every cycle can't masquerade as a
+            # quiet news day.
+            tracking.report_agent_failure(AGENT_ID, e)
         time.sleep(CHECK_INTERVAL)
 
 

@@ -7,6 +7,7 @@ venv/
 autotrade.log
 cron-stderr.log
 .autotrade.lock/
+preflight.status
 launchd-stdout.log
 launchd-stderr.log
 server.log
@@ -25,3 +26,14 @@ backup*.json
 # Only Me & You keeps its whole world (SQLite DB + photos/voice/video) here.
 # It is personal media belonging to two real people — never commit it.
 onlymeyou/data/
+
+# real broker exports never get committed
+robinhood-activity.csv
+*.activity.csv
+
+# Journal backups are local state, like journal.db itself — they carry raw
+# broker payloads (account numbers, balances) and this repo is public.
+journal.db.bak-*
+# Operational logs and one-off audit dumps: machine-local, not source.
+watchdog.log
+.audit-tmp/

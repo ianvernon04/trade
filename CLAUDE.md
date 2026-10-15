@@ -14,7 +14,13 @@ every action and every call you make so the system can grade itself.
   composite score in [-100, +100] with per-component votes
 - `app/options.py` — chain analytics, greeks, IV context, CALL/PUT/NO TRADE rec
 - `app/backtest.py`, `app/scorecard.py` — historical validation of the same signal
-- `app/journal.py` — the human's manual UI journal (per-user, auth'd)
+- `app/journal.py` — the human's journal (per-user, auth'd). Trades carry
+  provenance: `source` (NULL = typed by hand), `broker_ref`, `fees`,
+  `needs_review`. P&L is **net of fees**.
+- `app/brokerimport.py` — turns a Robinhood activity CSV (or statement PDF)
+  into fills, pairs them FIFO into round trips, and writes them to the journal.
+  Nothing is dropped silently: unpairable fills land flagged `needs_review`.
+  Re-importing an overlapping export dedupes on `broker_ref`.
 - `app/tracking.py` — **the agents' memory**: every event, decision, and graded
   outcome, plus the inter-agent message bus (tables `agent_events` /
   `agent_decisions` / `agent_messages` in `journal.db`)
@@ -220,12 +226,28 @@ above instead; autonomous mode is the exception, not the default.
 2. **Check for standing risk, then read the mail — in that order:**
 
    ```
-   python3 -m app alerts --agent trader --hours 12 --from analyst
+   python3 -m app alerts --agent trader --hours 12 --from analyst --gate
    ```
 
    Exit 0 = clear, **exit 1 = no new positions this run**: log a note naming
    the alerts and stop. With nobody watching, news risk is a reason to sit
    out, never a judgment call to trade through.
+
+   `--gate` applies the policy in `app/gate.py`, which distinguishes risk
+   from weather. **Blocking:** any alert naming a ticker (negative news
+   cluster), any macro topic clearing 6+ headlines in one scan (a storm, not
+   chatter), any scheduled FOMC/CPI day or the day before it (from
+   `app/calendar_events.py`), and anything the policy can't classify — that
+   last one fails closed. **Not blocking:** ambient macro alerts (the 2-5
+   headline "Fed/CPI/tariffs exist" hum) — the run logs them and proceeds.
+   Nineteen consecutive runs once stood down on that hum; a gate that never
+   opens provides no safety the $300 cap wasn't already providing, it only
+   hides whether the rest of the system works. If the Analyst is stale,
+   `--gate` first runs one synchronous news scan itself (self-heal) and only
+   stands down if the scan fails or the data is still stale — a napping
+   background thread is a thing to fix in-line, not a reason to skip the day.
+   The old blunt behavior (any high-priority alert blocks) remains the
+   default without `--gate`, for humans asking "is anything on fire?".
 
    **This is the gate, not `inbox --unread`.** The rule is about alerts
    landing inside a 12-hour window, and `--unread` answers a different
@@ -259,35 +281,65 @@ above instead; autonomous mode is the exception, not the default.
    Exit 0 = allowed, 1 = denied. **If it denies, do not place the order and
    do not work around it** — log the denial and move on. Never edit the
    policy mid-run to make a denied order pass: the policy is the owner's
-   standing instruction, not something to negotiate with.
+   standing instruction, not something to negotiate with (the file is
+   read-only during a run anyway).
 
-6. **Before placing anything, check for orders still working.** Call
-   `get_equity_orders` / `get_option_orders` and look for a non-terminal
-   state (`queued`, `unconfirmed`, `confirmed`, `partially_filled`). **If any
-   exist, place nothing this run** — log a note naming them and stop.
+   **The gate does its own arithmetic.** It computes worst case as
+   `limit_price × quantity × 100` for options (× 1 for stock) and ignores any
+   smaller `max_loss` you type — a `max_loss` below the computed cost is a
+   denial, not a discount. It also requires `side: "buy"`, a limit price, a
+   day order, and an expiry strictly after today. Fill the ticket honestly
+   and let the check decide; the number it prints back is the number that
+   counts.
 
-   The daily cap counts orders at *placement*, so it cannot be gamed within
-   a day. Across days it can: an unfilled limit order from Monday is still
-   working on Tuesday, and a run that ignores it adds a second. Five quiet
-   days of that is five live orders against one account, and they can all
-   fill at once on the sixth. Nothing else in the system notices this —
-   the cap resets at midnight UTC and the position snapshot shows only
-   *fills*, never resting orders.
+6. **Reconcile the broker's order book before placing anything.** Pull
+   `get_equity_orders` and `get_option_orders` (last few days), write the
+   combined result to a file in the scratch directory, and run:
 
-   This run cannot cancel (`cancel_*` is deliberately unlisted), so standing
-   down is the whole remedy. Clearing a stale order is the owner's job.
-
-7. For an order that clears the entry bar, the gate, and the open-order
-   check: log the proposal (`python3 -m app log proposal ...`) with the exact
-   contract *before* calling the order tool, place it, then immediately
-   record it so it counts toward the daily cap and lands in the audit trail:
-
-   ```python
-   from app import autonomy
-   autonomy.record_autonomous_order(order, payload=<tool result JSON>)
+   ```
+   python3 -m app autonomy reconcile --orders @/path/to/orders.json
    ```
 
+   Exit 0 = clean. **Exit 1 = place nothing this run** — it means either an
+   order is still working (`queued`, `unconfirmed`, `confirmed`,
+   `partially_filled`) or the broker shows a fill in the last 3 days that has
+   no local record. The command logs what it found and, for an unrecorded
+   fill, records it as autonomous so it counts toward today's cap. Log a note
+   and stop. If the broker tools are unreachable, the check cannot run, and
+   that is also a stand-down: never assume the book is clear.
+
+   Why this exists: the cap counts orders at placement, so an unfilled limit
+   order from Monday still working on Tuesday would otherwise get a second
+   order beside it, and a run that crashed between placing and recording
+   (this has happened) would leave a fill the cap never saw.
+
+   This run cannot cancel (`cancel_*` is deliberately denied), so standing
+   down is the whole remedy. Clearing a stale order is the owner's job.
+
+7. For an order that clears the entry bar, the gate, and reconciliation,
+   the sequence is **reserve → proposal → place → record**, in that order:
+
+   ```
+   python3 -m app autonomy reserve --payload '{...same ticket as the check...}'
+   ```
+
+   Exit 0 prints `RESERVED #<id>` and holds today's slot *before* the broker
+   is called; exit 1 = denied (gate or cap), stop. Then log the proposal
+   (`python3 -m app log proposal ...`) with the exact contract, call
+   `review_*` then `place_*`, and immediately attach the result:
+
+   ```
+   python3 -m app autonomy record --reservation <id> --payload '<tool result JSON>'
+   ```
+
+   A reservation that is never recorded (crash, sleep, timeout) **still
+   counts** toward the cap — that is the point. Only if the order tool was
+   never called at all, release it:
+   `python3 -m app autonomy release --reservation <id> --reason "..."`.
+   Never release a slot after `place_*` returned, whatever it returned.
+
    Link the decision with `--order-id` — identical to live-chat discipline.
+   `python3 -c` is denied in unattended runs; use the CLI forms above.
 8. Whether or not anything traded, end by logging a `note` event summarizing
    the run (what was scanned, what passed/failed, what happened) so a human
    reading the diary later has the full picture.
@@ -322,12 +374,25 @@ Change them via `python3 -m app autonomy set`, not by editing prose.
 
 ### Scheduling it
 
-`./install-autotrade.sh` installs a weekday cron entry that runs
-`autotrade.sh` (which invokes `claude -p` with the routine above); `--show`
-and `--remove` manage it. It defaults to **dry mode** — every gate runs and
-everything is logged, but no order tool is ever called — so the first runs
-prove the plumbing before real money is involved. `./install-autotrade.sh
-live` switches it on for real. Output lands in `autotrade.log` (gitignored).
+`./install-autotrade.sh --launchd [dry|live]` installs a weekday 9:00 AM
+launchd job (`com.iannxavierr.trade.autotrade`) that runs `autotrade.sh`;
+the cron form without `--launchd` still works. It defaults to **dry mode** —
+every gate runs and everything is logged, but no order tool is ever called —
+so the first runs prove the plumbing before real money is involved. `live`
+switches it on for real. Output lands in `autotrade.log` (gitignored).
+
+`autotrade.sh` is the operational guardrail, and `docs/unattended-permissions.md`
+is its manual. In short: it sources a long-lived token from
+`~/.config/trade/env` (so the subscription login can't expire mid-deployment),
+refuses to run unless the Mac is on Chicago time inside market hours, skips
+NYSE holidays, holds the Mac awake, kills a run at 45 minutes, recovers a
+stale lock, reads `scripts/preflight.sh`'s 8:30 AM verdict and downgrades
+to dry if auth is dead, makes `autonomy.json` read-only for the run, and
+launches `claude -p` with the committed `settings.unattended.json`
+permission set — an explicit allow list plus a deny list that covers
+`autonomy set/enable/disable`, `python3 -c`, `git`, `security`, `launchctl`,
+`cancel_*`, and crypto. The gitignored `settings.local.json` is **not** used
+for unattended runs.
 
 ### What could not be verified from the sandbox that built this
 
@@ -343,21 +408,31 @@ On you to confirm before trusting it with real money:
   one was there to answer, so rule 2's snapshot could not be refreshed. The
   run correctly refused to ingest the options half on its own: that would
   have written a `confirmed_empty` marker asserting a flat book on the
-  strength of half a pull, which is worse than staying blind. Order-placing
-  tools are deliberately **not** allowlisted and must stay that way.
+  strength of half a pull, which is worse than staying blind. **Answered
+  2026-10-11:** the unattended permission set now lives in the committed
+  `settings.unattended.json`. Order-placing tools (`review_*` and
+  `place_*` for equities and options) **are** allowlisted there on purpose —
+  the gate, reservation and reconciliation steps are what stand between
+  them and a bad order — and `cancel_*`, `exercise_option` and crypto are
+  explicitly denied.
 - **The repo must not live under `~/Desktop`.** macOS TCC privacy-protects
   Desktop/Documents/Downloads from background agents: the first scheduled
   run died at exit 126 with `Operation not permitted`, unable to even read
   `autotrade.sh`. It now lives at `~/trade`.
-- **A hang means a permission prompt.** `claude -p` waits forever on an
-  interactive tool-approval prompt no one is there to answer. If a run
-  produces no output past "starting run", see the `CLAUDE_FLAGS` comment in
-  `autotrade.sh`.
+- ~~**A hang means a permission prompt.**~~ **Corrected 2026-10-11:** in
+  `-p` mode an un-allowlisted tool is denied instantly, not hung. Every
+  multi-hour run in the log was auth or network (an expired login, DNS,
+  the broker MCP not connecting). `autotrade.sh` now kills a run at 45
+  minutes and `scripts/preflight.sh` catches dead auth at 8:30 before the
+  9:00 run.
 - **Robinhood's terms of service for automated order submission through
   their conversational interface haven't been checked.** Confirm this is
   permitted before relying on it.
-- **cron only fires while the Mac is awake**, and macOS may ask to grant
-  cron file access the first time.
+- **launchd and cron only fire while the Mac is awake.** `pmset -a
+  disablesleep 1` on AC plus `caffeinate` inside the run are what keep it
+  that way; a closed lid on battery still sleeps. The Mac must also stay on
+  America/Chicago time wherever it physically is — the clock guard refuses
+  to run otherwise.
 - **The gate cannot physically intercept an MCP call** — the broker tools
   are directly reachable. It is a mandatory protocol step with a
   deterministic, tested implementation and an audit trail, not a sandbox.
@@ -383,11 +458,17 @@ python3 -m app scan [--tickers AAPL,MSFT,...] [--json]  # rank today's setups (a
 python3 -m app evaluate [--period 1y]        # grade matured decisions
 python3 -m app report [--days 30]            # activity + track record
 python3 -m app events / decisions [--pending] [--json]
+python3 -m app import-broker --file activity.csv [--user-id N] [--commit]
+                                             # real Robinhood fills → journal; dry run without --commit
 python3 -m app export --out backup.json      # journal.db is gitignored — this is the backup
 python3 -m app autonomy status               # unattended-trading policy + today's usage
 python3 -m app autonomy enable | disable     # the kill switch
 python3 -m app autonomy set --key per_trade_max_usd --value 300
-python3 -m app autonomy check --payload '{...}'   # exit 0 = allowed, 1 = denied
+python3 -m app autonomy check --payload '{...}'   # exit 0 = allowed, 1 = denied (computes cost itself)
+python3 -m app autonomy reserve --payload '{...}' # hold today's slot BEFORE placing: 0 = RESERVED #id, 1 = denied
+python3 -m app autonomy record --reservation ID --payload '<tool result>'   # attach the broker result
+python3 -m app autonomy release --reservation ID --reason "..."             # only if place_* was never called
+python3 -m app autonomy reconcile --orders @orders.json   # 0 = book clean, 1 = open order or unrecorded fill → stand down
 ```
 
 Actions: `buy sell call put hold no_trade`. Decisions are graded on the

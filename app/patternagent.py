@@ -252,12 +252,11 @@ def compose_messages(a: dict) -> list[dict]:
 
 def run_scan(send: bool = True) -> dict:
     """One full Pattern Engine cycle: analyze history, log, deliver insights."""
-    from . import journal
-
-    # Fetch all graded decisions from the tracking store.
+    # Fetch all graded decisions from the tracking store (agent_decisions
+    # lives in tracking's DB, which tests redirect via tracking.DB_PATH).
     decisions = []
     grades = []
-    with journal._conn() as c:
+    with tracking._conn() as c:
         rows = c.execute(
             "SELECT * FROM agent_decisions WHERE hit IS NOT NULL ORDER BY id DESC"
         ).fetchall()
@@ -296,8 +295,8 @@ def _loop():
     while True:
         try:
             run_scan()
-        except Exception:
-            pass  # fail soft; next cycle retries
+        except Exception as e:
+            tracking.report_agent_failure(AGENT_ID, e)  # fail soft, but on the record
         time.sleep(CHECK_INTERVAL)
 
 

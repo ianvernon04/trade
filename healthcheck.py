@@ -174,9 +174,17 @@ def run_local_checks():
 
     @check("Macro calendar", needs_network=False)   # pure local date math
     def _():
+        from datetime import date
+        if calendar_events.calendar_exhausted(date.today(), 75):
+            last = calendar_events.last_known_event_date()
+            # FAIL, not WARN: the gate stands down once the calendar runs
+            # out, so this is a trading outage in the making, not a nit.
+            raise AssertionError(
+                f"macro calendar ends within 75 days — last known FOMC {last['FOMC']}, "
+                f"CPI {last['CPI']}; add next year's dates to app/calendar_events.py")
         ev = calendar_events.upcoming(60)
         if not ev:
-            return "WARN: no FOMC/CPI dates in the next 60 days — schedule may need updating for a new year"
+            return "WARN: no FOMC/CPI dates in the next 60 days"
         return f"next: {ev[0]['kind']} on {ev[0]['date']} ({ev[0]['in_days']}d)"
 
     @check("API endpoints (in-process)")

@@ -186,10 +186,39 @@ def cmd_ingest(args) -> int:
         return 2
     res = tracking.ingest(payload, source=args.source, kind_hint=args.kind,
                           account=args.account)
-    _out(res, args.json, lambda o: print(
-        f"Stored {o['stored']} event(s): "
-        + ", ".join(f"{k}×{n}" for k, n in o["kinds"].items())))
-    return 0
+
+    # Report the state the snapshot actually ended up in, not just the row
+    # count. A position pull that stores rows nothing can read leaves the
+    # Position and Risk Managers blind, and for two days that failure looked
+    # exactly like success at this line — "Stored 1 event(s)" — so the runs
+    # that caused it reported a confirmed-empty book in good faith.
+    if res.get("stored") and "position" in res.get("kinds", {}):
+        from . import portfolio
+        snap = portfolio.broker_snapshot()
+        if snap.get("blind"):
+            res["snapshot_state"] = "blind"
+        elif snap.get("confirmed_empty"):
+            res["snapshot_state"] = "confirmed_empty"
+        else:
+            res["snapshot_state"] = f"{len(snap['positions'])} position(s)"
+        res["unreadable"] = snap.get("unreadable", 0)
+
+    def human(o):
+        print(f"Stored {o['stored']} event(s): "
+              + ", ".join(f"{k}×{n}" for k, n in o["kinds"].items()))
+        if o.get("snapshot_state"):
+            print(f"Snapshot now reads: {o['snapshot_state']}"
+                  + (f" ({o['unreadable']} unreadable)" if o.get("unreadable") else ""))
+        if o.get("snapshot_state") == "blind":
+            print("WARNING: the agents cannot read this snapshot — they will "
+                  "report blind, not flat.", file=sys.stderr)
+        if o.get("warning"):
+            print(f"WARNING: {o['warning']}", file=sys.stderr)
+
+    _out(res, args.json, human)
+    # A position ingest that leaves the agents blind is a failed ingest, and
+    # an unattended run needs to see that in the exit code, not in prose.
+    return 1 if res.get("snapshot_state") == "blind" or res.get("warning") else 0
 
 
 # ---------- scan (headless-friendly market sweep, for autonomous mode) ----------
@@ -385,20 +414,54 @@ def cmd_alerts(args) -> int:
     56 hours once, and for every one of those hours this command answered
     CLEAR — not because there was no macro risk, but because nothing was
     looking for any. An unattended run would have traded straight through it.
+
+    Two modes share this command:
+
+    - default: any high-priority alert in the window → exit 1. Blunt, for a
+      human asking "is anything on fire?".
+    - ``--gate``: the autonomous run's policy (app/gate.py). Ticker alerts,
+      headline storms, and scheduled FOMC/CPI days block; ambient macro
+      chatter is reported but does not. A stale Analyst first gets one
+      chance to self-heal via a synchronous scan before failing closed —
+      nineteen straight runs once stood down because a background thread
+      lagged and nothing was allowed to just *run the scan*.
     """
     if args.from_agent:
-        last = tracking.agent_last_active(args.from_agent)
         stale_after = timedelta(hours=args.max_staleness_hours)
-        now = datetime.now(timezone.utc)
-        if last is None:
-            print(f"STALE — '{args.from_agent}' has never logged a scan. "
-                  "Cannot confirm the window is clear; standing down.")
-            return 1
-        age = now - datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-        if age > stale_after:
-            hrs = age.total_seconds() / 3600
-            print(f"STALE — '{args.from_agent}' last scanned {hrs:.1f}h ago "
-                  f"(limit {args.max_staleness_hours}h), so a quiet window "
+
+        def _staleness() -> float | None:
+            """Hours since the agent's last scan, or None if it never ran."""
+            last = tracking.agent_last_active(args.from_agent)
+            if last is None:
+                return None
+            age = (datetime.now(timezone.utc)
+                   - datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc))
+            return age.total_seconds() / 3600
+
+        hrs = _staleness()
+        fresh = hrs is not None and timedelta(hours=hrs) <= stale_after
+        if not fresh and args.gate and not args.no_self_heal \
+                and args.from_agent == "analyst":
+            # Self-heal: run the scan ourselves instead of standing down
+            # because a thread somewhere else is napping. One attempt; a
+            # failure falls through to the fail-closed path below.
+            print(f"STALE — 'analyst' last scanned "
+                  + (f"{hrs:.1f}h ago" if hrs is not None else "never")
+                  + f" (limit {args.max_staleness_hours}h). "
+                  "Running a synchronous news scan to self-heal...")
+            try:
+                from . import newsagent
+                r = newsagent.run_scan()
+                print(f"  scan ok: {r['analysis']['n_headlines']} headlines, "
+                      f"{len(r['delivered'])} message(s) delivered.")
+            except Exception as e:
+                print(f"  self-heal scan failed: {e}")
+            hrs = _staleness()
+            fresh = hrs is not None and timedelta(hours=hrs) <= stale_after
+        if not fresh:
+            print(f"STALE — '{args.from_agent}' last scanned "
+                  + (f"{hrs:.1f}h ago" if hrs is not None else "never")
+                  + f" (limit {args.max_staleness_hours}h), so a quiet window "
                   "proves nothing. Standing down.\n"
                   "  Silence from a scanner is not evidence of calm — check "
                   "that the agent is actually running.")
@@ -407,6 +470,32 @@ def cmd_alerts(args) -> int:
     rows = tracking.standing_alerts(args.agent, hours=args.hours,
                                     priority=args.priority,
                                     from_agent=args.from_agent)
+
+    if args.gate:
+        from datetime import date as _date
+
+        from . import gate
+        verdict = gate.classify(rows, today=_date.today())
+
+        def human_gate(v):
+            ev = v["event"]
+            if ev:
+                print(f"EVENT DAY — {ev['kind']} is {ev['phase']} ({ev['date']}): "
+                      "no new positions into a scheduled macro event.")
+            for b in v["blocking"]:
+                print(f"BLOCKING — {b['ts'][:16]} {b['subject']}: {b['why']}")
+            for a_ in v["ambient"]:
+                print(f"  ambient (not blocking): {a_['ts'][:16]} {a_['subject']} "
+                      f"({a_['headlines']} headline(s))")
+            if v["stand_down"]:
+                print("GATE: STAND DOWN.")
+            else:
+                print(f"GATE: CLEAR — {len(v['ambient'])} ambient macro alert(s) "
+                      "noted; none block under the gate policy "
+                      "(ticker alerts, headline storms, and FOMC/CPI days do).")
+
+        _out(verdict, args.json, human_gate)
+        return 1 if verdict["stand_down"] else 0
 
     def human(ms):
         if not ms:
@@ -501,6 +590,80 @@ def cmd_autonomy(args) -> int:
 
         _out(verdict, args.json, human)
         return 0 if verdict["allowed"] else 1
+
+    if args.action == "reserve":
+        order = _payload_from(args.payload)
+        if not isinstance(order, dict):
+            print("error: reserve requires --payload with a JSON object describing the order",
+                  file=sys.stderr)
+            return 2
+        res = autonomy.reserve_slot(order)
+
+        def human(r):
+            if r["reserved"]:
+                print(f"RESERVED #{r['reservation_id']}  (trades today: {r['trades_today']})")
+                print(f"  reservation id: {r['reservation_id']}")
+                print("  place the order now, then: python3 -m app autonomy record "
+                      f"--reservation {r['reservation_id']} --payload '<tool result JSON>'")
+                print("  if the order tool was never called: python3 -m app autonomy "
+                      f"release --reservation {r['reservation_id']} --reason \"...\"")
+            else:
+                print("DENIED")
+                for x in r["reasons"]:
+                    print(f"  ✖ {x}")
+
+        _out(res, args.json, human)
+        return 0 if res["reserved"] else 1
+
+    if args.action == "record":
+        if args.payload is None:
+            print("error: record requires --payload with the broker tool result",
+                  file=sys.stderr)
+            return 2
+        order = _payload_from(args.order)
+        if args.reservation is None and not isinstance(order, dict):
+            print("error: record without --reservation needs --order '{...}'", file=sys.stderr)
+            return 2
+        ev = autonomy.record_autonomous_order(
+            order if isinstance(order, dict) else None,
+            payload=_payload_from(args.payload), reservation_id=args.reservation)
+        _out(ev, args.json, lambda o: print(f"Recorded autonomous order event #{o['id']}: "
+                                            f"{o.get('note') or ''}"))
+        return 0
+
+    if args.action == "release":
+        if args.reservation is None or not args.reason:
+            print("error: release requires --reservation ID and --reason \"...\"",
+                  file=sys.stderr)
+            return 2
+        res = autonomy.release_slot(args.reservation, args.reason)
+        _out(res, args.json, lambda r: print(
+            f"RELEASED #{r['reservation_id']}" + (" (already released)" if r.get("already") else "")
+            if r["released"] else f"NOT RELEASED: {r['reason']}"))
+        return 0 if res["released"] else 1
+
+    if args.action == "reconcile":
+        payload = _payload_from(args.orders if args.orders is not None else args.payload)
+        if payload is None:
+            print("error: reconcile requires --orders (inline JSON, @file, or '-')",
+                  file=sys.stderr)
+            return 2
+        res = autonomy.reconcile_orders(payload)
+
+        def human(r):
+            print(f"Reconciled {r['parsed']} broker order(s): {len(r['open_orders'])} open, "
+                  f"{len(r['unrecorded_fills'])} unrecorded fill(s), {len(r['matched'])} "
+                  f"matched, {r['ignored']} ignored (terminal/old)")
+            for o in r["open_orders"]:
+                print(f"  OPEN  {o['id']} {o['ticker'] or '?'} {o['side'] or ''} "
+                      f"{o['quantity'] or ''} ({o['state'] or 'no state'})")
+            for o in r["unrecorded_fills"]:
+                print(f"  UNRECORDED FILL {o['id']} {o['ticker'] or '?'} {o['side'] or ''} "
+                      f"{o['quantity'] or ''} → logged as event #{o['event_id']}")
+            print("CLEAR" if r["ok"] else "STAND DOWN — " + "; ".join(r["reasons"]))
+
+        _out(res, args.json, human)
+        return 0 if res["ok"] else 1
 
     print(f"error: unknown autonomy action {args.action!r}", file=sys.stderr)
     return 2
@@ -603,6 +766,44 @@ def cmd_pattern_scan(args) -> int:
             print(f"({o['deduped']} message(s) suppressed as recent duplicates)")
 
     _out(res, args.json, human)
+    return 0
+
+
+def cmd_import_broker(args) -> int:
+    """Import real broker fills into the journal (dry run unless --commit)."""
+    from . import brokerimport, journal
+
+    journal.init()
+    user_id = args.user_id or journal.first_user_id()
+    if not user_id:
+        print("error: no journal account yet — create one in the app's Journal tab first",
+              file=sys.stderr)
+        return 2
+    try:
+        s = brokerimport.import_file(args.file, user_id=user_id, dry_run=not args.commit)
+    except brokerimport.ImportError_ as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(s, indent=2, default=str))
+        return 0
+
+    lo, hi = s["date_range"] or ("?", "?")
+    print(f"{s['fills_parsed']} fills parsed ({lo} → {hi}) → {s['trades_found']} trades")
+    print(f"  new: {s['new_trades']}  ({s['closed']} closed, {s['open']} open)"
+          f"   duplicates skipped: {s['skipped_duplicates']}")
+    print(f"  net P&L on the new closed trades: ${s['net_pnl']:,.2f} "
+          f"(fees ${s['total_fees']:,.2f})")
+    if s["needs_review"]:
+        print(f"  ⚠ {s['needs_review']} need review — open the Journal tab and fix them")
+    if s["tickers"]:
+        print("  tickers: " + ", ".join(s["tickers"][:20])
+              + (" …" if len(s["tickers"]) > 20 else ""))
+    if s["dry_run"]:
+        print("\nDRY RUN — nothing was written. Re-run with --commit to keep it.")
+    else:
+        print(f"\nWrote {s['written']} trades to the journal.")
     return 0
 
 
@@ -741,6 +942,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--max-staleness-hours", type=float, default=2.0,
                     help="stand down if that agent has not scanned this "
                          "recently (default 2h; it scans every 15 min)")
+    sp.add_argument("--gate", action="store_true",
+                    help="autonomous-run policy: ticker alerts, headline "
+                         "storms, and FOMC/CPI days block; ambient macro "
+                         "chatter is noted but does not (see app/gate.py)")
+    sp.add_argument("--no-self-heal", action="store_true",
+                    help="with --gate: never run a synchronous news scan to "
+                         "cure staleness; fail closed immediately")
     jflag(sp)
     sp.set_defaults(fn=cmd_alerts)
 
@@ -756,13 +964,30 @@ def build_parser() -> argparse.ArgumentParser:
     jflag(sp)
     sp.set_defaults(fn=cmd_send)
 
-    sp = sub.add_parser("autonomy", help="unattended-trading policy: status/enable/disable/set/check")
-    sp.add_argument("action", choices=["status", "enable", "disable", "set", "check"])
+    sp = sub.add_parser("autonomy", help="unattended-trading policy: status/enable/disable/set/"
+                                         "check/reserve/record/release/reconcile")
+    sp.add_argument("action", choices=["status", "enable", "disable", "set", "check",
+                                       "reserve", "record", "release", "reconcile"])
     sp.add_argument("--key", help="policy key for `set`")
     sp.add_argument("--value", help="new value for `set`")
-    sp.add_argument("--payload", help="order JSON for `check` (inline, @file, or '-')")
+    sp.add_argument("--payload", help="order JSON for `check`/`reserve`, or the broker tool "
+                                      "result for `record` (inline, @file, or '-')")
+    sp.add_argument("--reservation", type=int, help="reservation id for `record`/`release`")
+    sp.add_argument("--order", help="order JSON for `record` when no --reservation is given")
+    sp.add_argument("--reason", help="why the slot is being given back, for `release`")
+    sp.add_argument("--orders", help="broker equity+option orders JSON for `reconcile` "
+                                     "(inline, @file, or '-')")
     jflag(sp)
     sp.set_defaults(fn=cmd_autonomy)
+
+    sp = sub.add_parser("import-broker",
+                        help="import real fills from a Robinhood activity CSV or statement PDF")
+    sp.add_argument("--file", required=True, help="path to the activity CSV or statement PDF")
+    sp.add_argument("--user-id", type=int, help="journal account (default: the first one)")
+    sp.add_argument("--commit", action="store_true",
+                    help="actually write; without it this is a dry-run preview")
+    jflag(sp)
+    sp.set_defaults(fn=cmd_import_broker)
 
     sp = sub.add_parser("export", help="dump all tracking data as JSON (backup)")
     sp.add_argument("--out", help="write to a file instead of stdout")

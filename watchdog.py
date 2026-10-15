@@ -28,6 +28,7 @@ Exit codes: 0 = healthy or repaired, 1 = stale and not repaired.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -68,17 +69,61 @@ def _parse(ts: str) -> datetime:
     return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
-def check_agents() -> list[dict]:
-    """Per-agent freshness. An agent that never ran counts as stale."""
+def awake_minutes() -> float | None:
+    """Minutes since the machine last woke, or None if it can't be determined.
+
+    The agents mark time with `time.sleep`, which does not advance while the
+    machine is asleep. A laptop on battery cycles sleep/darkwake all night, so
+    by morning every agent looks hours stale without a single thread having
+    misbehaved — and the watchdog "fixed" that by restarting the server, six
+    minutes after wake, several times a night. Staleness only means something
+    over time the process was actually running.
+    """
+    try:
+        r = subprocess.run(["sysctl", "-n", "kern.waketime"],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return None
+        m = re.search(r"sec\s*=\s*(\d+)", r.stdout)
+        if not m:
+            return None
+        woke = datetime.fromtimestamp(int(m.group(1)), timezone.utc)
+        return max(0.0, (_now() - woke).total_seconds() / 60)
+    except Exception:  # noqa: BLE001 — a watchdog must not raise
+        return None
+
+
+_PROBE = object()   # "not supplied" — distinct from an explicit "unknowable"
+
+
+def check_agents(awake_min: float | None = _PROBE) -> list[dict]:
+    """Per-agent freshness. An agent that never ran counts as stale.
+
+    Age is capped at how long the machine has been awake: an agent silent for
+    9 hours across an overnight sleep has really only had minutes of running
+    time to report in. Where wake time is unknowable the raw age stands, which
+    keeps the old behaviour rather than silently disarming the watchdog.
+    """
+    if awake_min is _PROBE:
+        awake_min = awake_minutes()
     out = []
     now = _now()
     for source, kind, interval_min, stale_min in AGENTS:
         last = tracking.agent_last_active(source)
         age_min = None if last is None else (now - _parse(last)).total_seconds() / 60
+        effective = age_min
+        if age_min is not None and awake_min is not None:
+            effective = min(age_min, awake_min)
+        # An agent that has *never* reported is stale only once the machine has
+        # been up long enough for it to have had a turn; a fresh boot is not a
+        # hung thread.
+        stale = (effective > stale_min if effective is not None
+                 else (awake_min is None or awake_min > stale_min))
         out.append({
             "agent": source, "kind": kind, "last": last,
-            "age_min": age_min, "stale_after_min": stale_min,
-            "stale": age_min is None or age_min > stale_min,
+            "age_min": age_min, "effective_age_min": effective,
+            "awake_min": awake_min,
+            "stale_after_min": stale_min, "stale": stale,
         })
     return out
 
@@ -119,7 +164,10 @@ def main() -> int:
     rows = check_agents()
     stale = [r for r in rows if r["stale"]]
 
+    awake = rows[0]["awake_min"] if rows else None
     if not args.quiet:
+        if awake is not None:
+            print(f"  machine awake {awake:.0f}m — staleness is capped at that")
         for r in rows:
             age = "never" if r["age_min"] is None else f"{r['age_min']:.0f}m ago"
             flag = "STALE" if r["stale"] else "ok   "
@@ -135,6 +183,11 @@ def main() -> int:
     def _describe(r: dict) -> str:
         if r["age_min"] is None:
             return f"{r['agent']} never ran"
+        # Both numbers, when they differ: the raw age is what a human sees in
+        # the log, the awake-capped one is what the decision was actually made on.
+        eff = r.get("effective_age_min")
+        if eff is not None and r["age_min"] - eff > 1:
+            return f"{r['agent']} {r['age_min']:.0f}m stale ({eff:.0f}m awake)"
         return f"{r['agent']} {r['age_min']:.0f}m stale"
 
     detail = "; ".join(_describe(r) for r in stale)
