@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trading Platform by New World Logic — Interactive Enhancement Story &amp; UI Mock</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-4 md:p-6 select-none">
+
+  <!-- Top Story Header & Mode Toggle -->
+  <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 mb-4 shadow-sm">
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span class="text-xs font-mono uppercase tracking-wider text-[var(--muted-foreground)]">New World Logic · Interactive Architecture &amp; UI Walkthrough</span>
+        </div>
+        <h1 class="text-xl font-bold tracking-tight mt-0.5">Trading Platform <span class="text-sm font-normal text-[var(--muted-foreground)]">by New World Logic</span></h1>
+        <p class="text-xs text-[var(--muted-foreground)] mt-0.5">
+          Switch between <span class="font-semibold text-rose-500">Current v1 (Today's State)</span> and <span class="font-semibold text-emerald-500">Enhanced v2 (Proposed Upgrade)</span> across all 4 chapters.
+        </p>
+      </div>
+
+      <!-- Master Before / After Switch -->
+      <div class="flex items-center gap-2 bg-[var(--background)] border border-[var(--border)] p-1 rounded-lg self-start lg:self-auto">
+        <button id="btn-mode-v1" onclick="setMode('v1')" class="px-3 py-1.5 rounded-md text-xs font-mono font-semibold transition-all">
+          ⚠️ Current v1 (Silent Bugs)
+        </button>
+        <button id="btn-mode-v2" onclick="setMode('v2')" class="px-3 py-1.5 rounded-md text-xs font-mono font-semibold transition-all">
+          🚀 Enhanced v2 (Upgraded)
+        </button>
+      </div>
+    </div>
+
+    <!-- Chapter Navigation Tabs -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-2 mt-4 pt-3 border-t border-[var(--border)]">
+      <button onclick="setChapter(5)" id="tab-ch-5" class="text-left p-2.5 rounded-lg border transition-all">
+        <div class="text-[11px] font-mono text-emerald-400">NORTH STAR · CH 00</div>
+        <div class="text-xs font-semibold mt-0.5">🌱 Everyday Investor Mode</div>
+        <div class="text-[11px] text-[var(--muted-foreground)] truncate">Plain-English + $100-$300 Risk Slider</div>
+      </button>
+      <button onclick="setChapter(1)" id="tab-ch-1" class="text-left p-2.5 rounded-lg border transition-all">
+        <div class="text-[11px] font-mono text-[var(--muted-foreground)]">CHAPTER 01</div>
+        <div class="text-xs font-semibold mt-0.5">Command Center &amp; Charting</div>
+        <div class="text-[11px] text-[var(--muted-foreground)] truncate">Regime signals + 35-DTE options</div>
+      </button>
+      <button onclick="setChapter(2)" id="tab-ch-2" class="text-left p-2.5 rounded-lg border transition-all">
+        <div class="text-[11px] font-mono text-[var(--muted-foreground)]">CHAPTER 02</div>
+        <div class="text-xs font-semibold mt-0.5">5-Agent Bus &amp; True Greeks</div>
+        <div class="text-[11px] text-[var(--muted-foreground)] truncate">17-ticker news gate + BS Gamma/Vega</div>
+      </button>
+      <button onclick="setChapter(3)" id="tab-ch-3" class="text-left p-2.5 rounded-lg border transition-all">
+        <div class="text-[11px] font-mono text-[var(--muted-foreground)]">CHAPTER 03</div>
+        <div class="text-xs font-semibold mt-0.5">Pattern Engine Self-Learning</div>
+        <div class="text-[11px] text-[var(--muted-foreground)] truncate">Fixing the 70% dead-code schema bug</div>
+      </button>
+      <button onclick="setChapter(4)" id="tab-ch-4" class="text-left p-2.5 rounded-lg border transition-all">
+        <div class="text-[11px] font-mono text-[var(--muted-foreground)]">CHAPTER 04</div>
+        <div class="text-xs font-semibold mt-0.5">Realistic Options Backtester</div>
+        <div class="text-[11px] text-[var(--muted-foreground)] truncate">Next-bar open + Theta/IV decay + WAL</div>
+      </button>
+    </div>
+  </div>
+
+  <!-- Simulated Live Autonomy & Gate Top Bar (Only in v2, or shows CLI-only blindspot in v1) -->
+  <div id="autonomy-topbar" class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2.5 mb-4 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+    <!-- Dynamically populated -->
+  </div>
+
+  <!-- CHAPTER 1: COMMAND CENTER, CHARTING & 35-DTE OPTIONS -->
+  <div id="chapter-1" class="space-y-4">
+    <!-- Story Banner -->
+    <div id="ch1-banner" class="rounded-xl border p-3.5 text-xs"></div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <!-- Left Watchlist Column -->
+      <div class="lg:col-span-3 bg-[var(--card)] border border-[var(--border)] rounded-xl p-3.5 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2.5">
+            <span class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Watchlist (17)</span>
+            <span id="watchlist-latency-badge" class="text-[11px] font-mono px-2 py-0.5 rounded"></span>
+          </div>
+          <div id="watchlist-items" class="space-y-1.5"></div>
+        </div>
+        <div id="watchlist-footnote" class="mt-3 pt-2.5 border-t border-[var(--border)] text-[11px] text-[var(--muted-foreground)]"></div>
+      </div>
+
+      <!-- Center Candlestick + Risk/Reward Box Canvas -->
+      <div class="lg:col-span-6 bg-[var(--card)] border border-[var(--border)] rounded-xl p-3.5">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-base font-bold font-mono">SOFI</span>
+              <span class="text-sm font-mono text-emerald-500 font-semibold">$14.85 (+4.21%)</span>
+              <span id="regime-pill" class="text-[11px] font-mono px-2 py-0.5 rounded"></span>
+            </div>
+            <p id="chart-subtitle" class="text-[11px] text-[var(--muted-foreground)]"></p>
+          </div>
+          <div id="signal-score-badge" class="text-right font-mono"></div>
+        </div>
+
+        <canvas id="priceChartCanvas" width="620" height="270" class="w-full rounded-lg border border-[var(--border)] bg-[var(--background)]"></canvas>
+
+        <!-- Signal Breakdown Bar -->
+        <div id="signal-breakdown" class="grid grid-cols-5 gap-2 mt-3 pt-2.5 border-t border-[var(--border)] text-center font-mono text-[11px]"></div>
+      </div>
+
+      <!-- Right Options Recommender Card -->
+      <div class="lg:col-span-3 bg-[var(--card)] border border-[var(--border)] rounded-xl p-3.5 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Options Recommender</span>
+            <span id="expiry-badge" class="text-[11px] font-mono px-2 py-0.5 rounded"></span>
+          </div>
+          <div id="option-card-body" class="space-y-2.5"></div>
+        </div>
+        <div id="option-card-footer" class="mt-3 pt-2.5 border-t border-[var(--border)]"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAPTER 2: 5-AGENT NEIGHBORHOOD, 17-TICKER NEWS GATE & TRUE GREEKS -->
+  <div id="chapter-2" class="space-y-4 hidden">
+    <div id="ch2-banner" class="rounded-xl border p-3.5 text-xs"></div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <!-- 5-Agent Pipeline Interactive Map -->
+      <div class="lg:col-span-5 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">5-Agent Autonomous Bus</h3>
+          <span id="bus-auth-pill" class="text-[11px] font-mono px-2 py-0.5 rounded"></span>
+        </div>
+        <div id="agent-nodes-list" class="space-y-2.5"></div>
+      </div>
+
+      <!-- Portfolio Greeks Comparison -->
+      <div class="lg:col-span-4 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Risk Manager: Portfolio Greeks</h3>
+            <span id="greeks-formula-badge" class="text-[11px] font-mono px-2 py-0.5 rounded"></span>
+          </div>
+          <div id="greeks-grid" class="grid grid-cols-2 gap-2.5"></div>
+          <div id="greeks-code-diff" class="mt-3 p-2.5 rounded-lg bg-[var(--background)] border border-[var(--border)] font-mono text-[11px] leading-relaxed"></div>
+        </div>
+        <div id="journal-sync-box" class="mt-3 pt-2.5 border-t border-[var(--border)]"></div>
+      </div>
+
+      <!-- 17-Ticker News & Sentiment Gate -->
+      <div class="lg:col-span-3 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Analyst: News Gate</h3>
+          <span id="news-coverage-badge" class="text-[11px] font-mono px-2 py-0.5 rounded"></span>
+        </div>
+        <div id="news-feed-simulation" class="space-y-2.5 text-xs"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAPTER 3: SELF-LEARNING PATTERN ENGINE -->
+  <div id="chapter-3" class="space-y-4 hidden">
+    <div id="ch3-banner" class="rounded-xl border p-3.5 text-xs"></div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <!-- Schema Mapping Inspector -->
+      <div class="lg:col-span-4 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] mb-2.5">
+          SQLite <code class="font-mono">agent_decisions</code> Schema Bridge
+        </h3>
+        <div id="schema-bridge-table" class="space-y-2 text-xs font-mono"></div>
+      </div>
+
+      <!-- 4-Dimension Pattern Matrix -->
+      <div class="lg:col-span-8 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+            Self-Learning Win-Rate Matrix (Live from <code class="font-mono">agent_decisions</code>)
+          </h3>
+          <span id="pattern-active-buckets" class="text-[11px] font-mono px-2 py-0.5 rounded"></span>
+        </div>
+        <div id="pattern-matrix-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAPTER 4: REALISTIC OPTIONS BACKTESTER & SQLITE WAL -->
+  <div id="chapter-4" class="space-y-4 hidden">
+    <div id="ch4-banner" class="rounded-xl border p-3.5 text-xs"></div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <!-- Equity Curve Canvas -->
+      <div class="lg:col-span-8 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div>
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+              Options Strategy Equity Curve (15-Bar Hold Window)
+            </h3>
+            <p id="backtest-subtitle" class="text-[11px] text-[var(--muted-foreground)]"></p>
+          </div>
+          <div class="flex items-center gap-3 text-[11px] font-mono">
+            <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-0.5 bg-sky-400"></span>Naive 5x Stock Proxy (v1)</span>
+            <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-0.5 bg-emerald-400"></span>BS Theta + IV + Next-Open (v2)</span>
+          </div>
+        </div>
+        <canvas id="backtestChartCanvas" width="680" height="240" class="w-full rounded-lg border border-[var(--border)] bg-[var(--background)]"></canvas>
+        <div id="backtest-metrics-row" class="grid grid-cols-4 gap-2 mt-3 pt-2.5 border-t border-[var(--border)] text-center font-mono text-xs"></div>
+      </div>
+
+      <!-- SQLite Concurrency & Hygiene Card -->
+      <div class="lg:col-span-4 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 flex flex-col justify-between">
+        <div>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] mb-3">
+            Database &amp; Security Hardening
+          </h3>
+          <div id="db-hardening-list" class="space-y-2.5 text-xs"></div>
+        </div>
+        <div id="db-code-snippet" class="mt-3 p-2.5 rounded-lg bg-[var(--background)] border border-[var(--border)] font-mono text-[11px]"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAPTER 5 (CH 00): EVERYDAY INVESTOR & MOBILE 3-TIER EXPERIENCE -->
+  <div id="chapter-5" class="space-y-4 hidden">
+    <div class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3.5 text-xs flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div>
+        <div class="font-semibold text-emerald-400 mb-0.5">🌱 Everyday Investor First — Built for Real People, Not Wall Street Quants</div>
+        <p class="text-[var(--muted-foreground)]">
+          Toggle the 3 Understanding Levels below to see how the exact same live SOFI data ($14.85) adapts from <strong>🌱 Everyday Plain-English</strong> to <strong>⚡ Trader</strong> and <strong>🔬 Quant</strong>.
+        </p>
+      </div>
+      <div class="flex items-center gap-1.5 bg-[var(--background)] border border-[var(--border)] p-1 rounded-lg self-start">
+        <button onclick="setTier('everyday')" id="tier-btn-everyday" class="px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">🌱 Everyday</button>
+        <button onclick="setTier('trader')" id="tier-btn-trader" class="px-2.5 py-1 rounded text-xs font-semibold text-[var(--muted-foreground)]">⚡ Trader</button>
+        <button onclick="setTier('quant')" id="tier-btn-quant" class="px-2.5 py-1 rounded text-xs font-semibold text-[var(--muted-foreground)]">🔬 Quant</button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <!-- Left: Traffic-Light Verdict + 4-Point Plain-English Checklist -->
+      <div class="lg:col-span-4 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-3">
+        <div id="everyday-verdict-card"></div>
+        <div id="everyday-checklist" class="space-y-2 pt-2 border-t border-[var(--border)]"></div>
+      </div>
+
+      <!-- Center: Interactive Dollar Risk Calculator ($100-$300) -->
+      <div class="lg:col-span-4 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Dollar-First Safety Calculator</h3>
+            <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-sky-500/15 text-sky-400">SOFI @ $14.85</span>
+          </div>
+          <label class="block text-xs text-[var(--muted-foreground)] mb-1">
+            If I invest <span id="budget-label" class="font-bold text-[var(--foreground)] font-mono">$200</span> today:
+          </label>
+          <input id="budget-slider" type="range" min="50" max="300" step="25" value="200" oninput="renderChapter5()" class="w-full accent-emerald-500 cursor-pointer mb-3" />
+          <div id="everyday-risk-box" class="space-y-2.5"></div>
+        </div>
+        <div id="everyday-explainer-preview" class="mt-3 pt-2.5 border-t border-[var(--border)] text-xs"></div>
+      </div>
+
+      <!-- Right: Plain-English Option Ticket vs Pro Chain -->
+      <div class="lg:col-span-4 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]" id="everyday-opt-title">Plain-English Option Guide</h3>
+            <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400">35 Days · Safe Window</span>
+          </div>
+          <div id="everyday-option-ticket" class="space-y-2.5 text-xs"></div>
+        </div>
+        <div class="mt-3 pt-2.5 border-t border-[var(--border)] text-[11px] text-[var(--muted-foreground)]">
+          ✅ <strong>No hidden surprises:</strong> Earnings are 38 days away (after expiration) and daily time cost is shown in plain dollars.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentMode = 'v2';
+    let currentChapter = 5;
+    let currentTier = 'everyday';
+
+    function setTier(tier) {
+      currentTier = tier;
+      ['everyday', 'trader', 'quant'].forEach(t => {
+        const b = document.getElementById('tier-btn-' + t);
+        if (!b) return;
+        if (t === tier) {
+          b.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40';
+        } else {
+          b.className = 'px-2.5 py-1 rounded text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]';
+        }
+      });
+      renderChapter5();
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+      const b1 = document.getElementById('btn-mode-v1');
+      const b2 = document.getElementById('btn-mode-v2');
+      if (mode === 'v1') {
+        b1.className = 'px-3 py-1.5 rounded-md text-xs font-mono font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/40';
+        b2.className = 'px-3 py-1.5 rounded-md text-xs font-mono font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]';
+      } else {
+        b2.className = 'px-3 py-1.5 rounded-md text-xs font-mono font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40';
+        b1.className = 'px-3 py-1.5 rounded-md text-xs font-mono font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]';
+      }
+      renderAll();
+    }
+
+    function setChapter(ch) {
+      currentChapter = ch;
+      for (let i = 1; i <= 5; i++) {
+        const el = document.getElementById('chapter-' + i);
+        const tab = document.getElementById('tab-ch-' + i);
+        if (!el || !tab) continue;
+        if (i === ch) {
+          el.classList.remove('hidden');
+          tab.className = 'text-left p-2.5 rounded-lg border border-sky-500/60 bg-sky-500/10 transition-all';
+        } else {
+          el.classList.add('hidden');
+          tab.className = 'text-left p-2.5 rounded-lg border border-[var(--border)] bg-[var(--background)] opacity-75 hover:opacity-100 transition-all';
+        }
+      }
+      renderAll();
+    }
+
+    function renderTopBar() {
+      const bar = document.getElementById('autonomy-topbar');
+      if (currentMode === 'v1') {
+        bar.innerHTML = `
+          <div class="flex items-center gap-2 text-amber-400">
+            <span>⚠️ UI BLINDSPOT IN v1:</span>
+            <span class="text-[var(--muted-foreground)]">Pre-Trade Gate, Daily Autonomy Cap ($300), and Portfolio Freshness are hidden in CLI-only commands (<code class="text-[var(--foreground)]">python3 -m app gate check</code>).</span>
+          </div>
+          <span class="px-2 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/30">UNAUTHENTICATED /api/tracking/*</span>
+        `;
+      } else {
+        bar.innerHTML = `
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold">GATE: GO</span>
+            <span class="px-2 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30">PORTFOLIO: OK (8m ago · 3 legs)</span>
+            <span class="px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">SLOTS: 1/2 USED ($148 / $300 CAP)</span>
+            <span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">MACRO CAL: CLEAR (CPI in 6d)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">🔒 AUTH LOCKED</span>
+            <span class="text-[var(--muted-foreground)]">Agent Bus: 0 Urgent · 2 Info</span>
+          </div>
+        `;
+      }
+    }
+
+    function renderChapter1() {
+      const banner = document.getElementById('ch1-banner');
+      const latencyBadge = document.getElementById('watchlist-latency-badge');
+      const wlContainer = document.getElementById('watchlist-items');
+      const wlFoot = document.getElementById('watchlist-footnote');
+      const regimePill = document.getElementById('regime-pill');
+      const chartSub = document.getElementById('chart-subtitle');
+      const scoreBadge = document.getElementById('signal-score-badge');
+      const breakdown = document.getElementById('signal-breakdown');
+      const expiryBadge = document.getElementById('expiry-badge');
+      const optBody = document.getElementById('option-card-body');
+      const optFoot = document.getElementById('option-card-footer');
+
+      if (currentMode === 'v1') {
+        banner.className = 'rounded-xl border border-rose-500/40 bg-rose-500/10 p-3.5 text-xs';
+        banner.innerHTML = `
+          <div class="font-semibold text-rose-400 mb-1">Current v1 Issues in Command Center (<code class="font-mono">signals.py</code>, <code class="font-mono">options.py</code>, <code class="font-mono">scanner.py</code>):</div>
+          <ul class="list-disc list-inside space-y-0.5 text-[var(--muted-foreground)]">
+            <li><strong class="text-[var(--foreground)]">Mean-Reversion Cancels Breakouts:</strong> On a high-volume SOFI breakout (RSI 74, upper Bollinger Band), <code class="font-mono">_mean_reversion_score</code> subtracts <strong>-19 pts</strong> from the bullish trend signal, demoting a <code class="font-mono">BUY</code> into a <code class="font-mono">NEUTRAL (+21)</code>.</li>
+            <li><strong class="text-[var(--foreground)]">Front-Week Expiry Trap:</strong> <code class="font-mono">analyze_chain(expiry=None)</code> defaults to <code class="font-mono">expiries[0]</code> (<strong>3 DTE</strong>), recommending a high-theta weekly contract while printing a warning that &lt;21 DTE burns theta.</li>
+            <li><strong class="text-[var(--foreground)]">51 Sequential HTTP Calls:</strong> Cold scan loops over 17 tickers sequentially (~32s load time).</li>
+          </ul>
+        `;
+        latencyBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/15 text-rose-400';
+        latencyBadge.textContent = '32.4s (Sequential)';
+        regimePill.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-400';
+        regimePill.textContent = 'NO REGIME FILTER';
+        chartSub.textContent = 'Close-only line chart · 5-band legend cap · No Entry/Stop/Target box overlay';
+        scoreBadge.innerHTML = `<div class="text-xs text-[var(--muted-foreground)]">SCORE</div><div class="text-sm font-bold text-amber-400">+21 NEUTRAL</div>`;
+        breakdown.innerHTML = [
+          ['TREND', '+0.85', 'text-emerald-400'],
+          ['MOMENTUM', '+0.62', 'text-emerald-400'],
+          ['MEAN REV', '-0.95 (RSI 74!)', 'text-rose-400 font-bold'],
+          ['VOLUME', '+0.70', 'text-emerald-400'],
+          ['VOLATILITY', '+0.10', 'text-[var(--muted-foreground)]'],
+        ].map(([k, v, c]) => `<div class="p-1.5 rounded bg-[var(--background)] border border-[var(--border)]"><div class="text-[10px] text-[var(--muted-foreground)]">${k}</div><div class="${c} mt-0.5">${v}</div></div>`).join('');
+
+        expiryBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-400';
+        expiryBadge.textContent = 'expiries[0] · 3 DTE!';
+        optBody.innerHTML = `
+          <div class="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30">
+            <div class="text-xs font-mono font-bold text-rose-400">SOFI $15.00 Call (Front-Week)</div>
+            <div class="text-[11px] text-[var(--muted-foreground)] mt-0.5">Picked <code class="font-mono">expiries[0]</code> because <code class="font-mono">expiry=None</code></div>
+          </div>
+          <div class="space-y-1.5 text-xs font-mono">
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">DTE</span><span class="text-rose-400 font-bold">3 Days (Theta Trap)</span></div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Mid Price</span><span>$0.19 ($19/contract)</span></div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Bid / Ask Spread</span><span class="text-rose-400">26.3% (Unfiltered)</span></div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Daily Theta</span><span class="text-rose-400">-$0.058 / day (-30%/d)</span></div>
+          </div>
+          <div class="p-2 rounded bg-[var(--background)] border border-[var(--border)] text-[11px] text-amber-400 font-mono">
+            "Prefer 30-45 DTE to reduce theta burn. WARNING: this expiry is under 21 DTE."
+          </div>
+        `;
+        optFoot.innerHTML = `<div class="text-[11px] text-[var(--muted-foreground)]">No liquidity/spread filter in <code class="font-mono">options._recommend</code></div>`;
+      } else {
+        banner.className = 'rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3.5 text-xs';
+        banner.innerHTML = `
+          <div class="font-semibold text-emerald-400 mb-1">Enhanced v2 Upgrades in Command Center:</div>
+          <ul class="list-disc list-inside space-y-0.5 text-[var(--muted-foreground)]">
+            <li><strong class="text-[var(--foreground)]">Regime-Conditioned Scoring:</strong> When ADX &gt; 25 and SMAs stack bullishly (<code class="font-mono">TREND</code> regime), RSI 65–78 confirms momentum instead of subtracting -19 pts — lifting SOFI to <code class="font-mono">STRONG BUY (+64)</code>.</li>
+            <li><strong class="text-[var(--foreground)]">Smart 35-DTE Expiry &amp; Liquidity Gate:</strong> <code class="font-mono">analyze_chain(expiry=None)</code> auto-selects the expiry closest to <strong>35 DTE</strong> and requires <code class="font-mono">bid &gt; 0</code>, <code class="font-mono">spread &le; 12%</code>, and <code class="font-mono">OI &ge; 100</code>.</li>
+            <li><strong class="text-[var(--foreground)]">Parallel Watchlist + OHLC Risk Box:</strong> Bounded <code class="font-mono">ThreadPoolExecutor(5)</code> cuts cold load to <strong>3.8s</strong>; chart draws OHLC candles + ATR Entry/Stop/Target box.</li>
+          </ul>
+        `;
+        latencyBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400';
+        latencyBadge.textContent = '3.8s (5x Parallel)';
+        regimePill.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+        regimePill.textContent = 'REGIME: TREND (ADX 31.4)';
+        chartSub.textContent = 'OHLC Candlesticks · SMA 20/50/200 · Visual ATR Stop ($13.90) & 2.0R Target ($16.75) Overlay';
+        scoreBadge.innerHTML = `<div class="text-xs text-[var(--muted-foreground)]">REGIME SCORE</div><div class="text-sm font-bold text-emerald-400">+64 BUY</div>`;
+        breakdown.innerHTML = [
+          ['TREND (35%)', '+0.90', 'text-emerald-400 font-bold'],
+          ['MOMENTUM (30%)', '+0.74', 'text-emerald-400 font-bold'],
+          ['MEAN REV (5%)', '0.00 (Muted)', 'text-sky-400'],
+          ['VOLUME (20%)', '+0.75', 'text-emerald-400'],
+          ['VOLATILITY (10%)', '+0.35', 'text-emerald-400'],
+        ].map(([k, v, c]) => `<div class="p-1.5 rounded bg-[var(--background)] border border-[var(--border)]"><div class="text-[10px] text-[var(--muted-foreground)]">${k}</div><div class="${c} mt-0.5">${v}</div></div>`).join('');
+
+        expiryBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400';
+        expiryBadge.textContent = 'Auto 36 DTE · Liquid';
+        optBody.innerHTML = `
+          <div class="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+            <div class="text-xs font-mono font-bold text-emerald-400">SOFI $15.00 Call (36 DTE)</div>
+            <div class="text-[11px] text-[var(--muted-foreground)] mt-0.5">Auto-selected closest to 35 DTE sweet spot</div>
+          </div>
+          <div class="space-y-1.5 text-xs font-mono">
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Mid Price</span><span class="text-emerald-400 font-semibold">$0.74 ($74 / contract)</span></div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Delta / Gamma</span><span>+0.52 / +0.19</span></div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Bid-Ask Spread</span><span class="text-emerald-400">2.7% (PASS &le; 12%)</span></div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Open Interest</span><span>14,280 (PASS &ge; 100)</span></div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Daily Theta</span><span>-$0.011 / day (-1.4%/d)</span></div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Fits $300 Cap?</span><span class="text-emerald-400">YES (Max 2 contracts = $148)</span></div>
+          </div>
+        `;
+        optFoot.innerHTML = `
+          <button class="w-full py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-mono font-semibold transition-all">
+            ✓ Reserve Autonomy Slot ($148 / $300)
+          </button>
+        `;
+      }
+
+      const tickers = [
+        { sym: 'SOFI', px: '$14.85', chg: '+4.2%', regime: 'TREND', scoreV1: '+21', scoreV2: '+64', cap: true },
+        { sym: 'INTC', px: '$21.40', chg: '+1.8%', regime: 'TREND', scoreV1: '+38', scoreV2: '+58', cap: true },
+        { sym: 'RIVN', px: '$11.20', chg: '-2.9%', regime: 'RANGE', scoreV1: '-42', scoreV2: '-45', cap: true },
+        { sym: 'IWM',  px: '$218.60', chg: '+0.9%', regime: 'TREND', scoreV1: '+29', scoreV2: '+49', cap: true },
+        { sym: 'F',    px: '$10.85', chg: '+0.4%', regime: 'RANGE', scoreV1: '+12', scoreV2: '+18', cap: true },
+        { sym: 'NVDA', px: '$138.20', chg: '+1.1%', regime: 'TREND', scoreV1: '+34', scoreV2: '+55', cap: false },
+      ];
+      wlContainer.innerHTML = tickers.map((t, idx) => `
+        <div class="flex items-center justify-between p-2 rounded-lg border ${idx === 0 ? 'border-sky-500/50 bg-sky-500/10' : 'border-[var(--border)] bg-[var(--background)]'} text-xs font-mono">
+          <div>
+            <div class="flex items-center gap-1.5">
+              <span class="font-bold">${t.sym}</span>
+              ${currentMode === 'v2' ? `<span class="text-[10px] px-1.5 py-0.2 rounded ${t.regime === 'TREND' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-500/20 text-[var(--muted-foreground)]'}">${t.regime}</span>` : ''}
+            </div>
+            <div class="text-[11px] text-[var(--muted-foreground)]">${t.px} <span class="${t.chg.startsWith('+') ? 'text-emerald-400' : 'text-rose-400'}">${t.chg}</span></div>
+          </div>
+          <div class="text-right">
+            <div class="font-bold ${((currentMode === 'v2' ? t.scoreV2 : t.scoreV1).startsWith('+')) ? 'text-emerald-400' : 'text-rose-400'}">${currentMode === 'v2' ? t.scoreV2 : t.scoreV1}</div>
+            <div class="text-[10px] text-[var(--muted-foreground)]">${t.cap ? '≤$300 OK' : '>$300 Leg'}</div>
+          </div>
+        </div>
+      `).join('');
+
+      wlFoot.innerHTML = currentMode === 'v1'
+        ? `⚠️ First 199 bars of history get artificial <code class="font-mono">+0.3</code> bullish bias in <code class="font-mono">signals.score_series</code> because <code class="font-mono">sma200.isna()</code> is treated as bullish.`
+        : `✓ <code class="font-mono">sma200.isna()</code> neutral-zeroed in <code class="font-mono">score_series</code>, matching single-bar <code class="font-mono">_trend_score</code>.`;
+
+      drawPriceChart();
+    }
+
+    function drawPriceChart() {
+      const canvas = document.getElementById('priceChartCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width;
+      const H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // Grid lines
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+      ctx.lineWidth = 1;
+      for (let y = 30; y < H - 30; y += 45) {
+        ctx.beginPath();
+        ctx.moveTo(40, y);
+        ctx.lineTo(W - 55, y);
+        ctx.stroke();
+      }
+
+      const candles = [
+        [13.1, 13.4, 12.9, 13.3], [13.3, 13.5, 13.1, 13.2], [13.2, 13.6, 13.1, 13.5],
+        [13.5, 13.8, 13.4, 13.7], [13.7, 13.9, 13.5, 13.6], [13.6, 14.0, 13.5, 13.9],
+        [13.9, 14.1, 13.7, 13.8], [13.8, 14.2, 13.7, 14.1], [14.1, 14.3, 13.9, 14.0],
+        [14.0, 14.4, 13.9, 14.3], [14.3, 14.5, 14.1, 14.2], [14.2, 14.6, 14.1, 14.5],
+        [14.5, 14.9, 14.4, 14.85]
+      ];
+      const minP = 12.6, maxP = 17.1;
+      const mapY = (p) => H - 30 - ((p - minP) / (maxP - minP)) * (H - 55);
+      const startX = 55;
+      const stepX = 28;
+
+      // Price Axis labels
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.75)';
+      ctx.font = '10px monospace';
+      [13.0, 14.0, 15.0, 16.0, 16.75].forEach(p => {
+        ctx.fillText('$' + p.toFixed(2), W - 50, mapY(p) + 3);
+      });
+
+      if (currentMode === 'v1') {
+        // Close line only
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        candles.forEach((c, i) => {
+          const x = startX + i * stepX;
+          const y = mapY(c[3]);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      } else {
+        // Draw OHLC Candlesticks
+        candles.forEach((c, i) => {
+          const [o, h, l, cl] = c;
+          const x = startX + i * stepX;
+          const bull = cl >= o;
+          ctx.strokeStyle = bull ? '#10b981' : '#f43f5e';
+          ctx.fillStyle = bull ? '#10b981' : '#f43f5e';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(x, mapY(h));
+          ctx.lineTo(x, mapY(l));
+          ctx.stroke();
+          const topY = mapY(Math.max(o, cl));
+          const botY = mapY(Math.min(o, cl));
+          ctx.fillRect(x - 5, topY, 10, Math.max(3, botY - topY));
+        });
+
+        // Draw Risk/Reward Trade Overlay Box from last candle
+        const boxX = startX + (candles.length - 1) * stepX + 12;
+        const boxW = 145;
+        const yEntry = mapY(14.85);
+        const yTarget = mapY(16.75);
+        const yStop = mapY(13.90);
+
+        // Target zone (emerald)
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.16)';
+        ctx.fillRect(boxX, yTarget, boxW, yEntry - yTarget);
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.8)';
+        ctx.strokeRect(boxX, yTarget, boxW, yEntry - yTarget);
+
+        // Stop zone (rose)
+        ctx.fillStyle = 'rgba(244, 63, 94, 0.16)';
+        ctx.fillRect(boxX, yEntry, boxW, yStop - yEntry);
+        ctx.strokeStyle = 'rgba(244, 63, 94, 0.8)';
+        ctx.strokeRect(boxX, yEntry, boxW, yStop - yEntry);
+
+        // Labels inside box
+        ctx.fillStyle = '#34d399';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText('TARGET $16.75 (2.0R)', boxX + 8, yTarget + 14);
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillText('ENTRY  $14.85', boxX + 8, yEntry - 5);
+        ctx.fillStyle = '#fb7185';
+        ctx.fillText('STOP   $13.90 (2xATR)', boxX + 8, yStop - 6);
+      }
+    }
+
+    function renderChapter2() {
+      const banner = document.getElementById('ch2-banner');
+      const authPill = document.getElementById('bus-auth-pill');
+      const nodesList = document.getElementById('agent-nodes-list');
+      const greeksBadge = document.getElementById('greeks-formula-badge');
+      const greeksGrid = document.getElementById('greeks-grid');
+      const greeksDiff = document.getElementById('greeks-code-diff');
+      const syncBox = document.getElementById('journal-sync-box');
+      const newsBadge = document.getElementById('news-coverage-badge');
+      const newsFeed = document.getElementById('news-feed-simulation');
+
+      if (currentMode === 'v1') {
+        banner.className = 'rounded-xl border border-rose-500/40 bg-rose-500/10 p-3.5 text-xs';
+        banner.innerHTML = `
+          <div class="font-semibold text-rose-400 mb-1">Current v1 Silent Failures in Risk Manager &amp; Analyst (<code class="font-mono">riskagent.py</code>, <code class="font-mono">news.py</code>):</div>
+          <ul class="list-disc list-inside space-y-0.5 text-[var(--muted-foreground)]">
+            <li><strong class="text-[var(--foreground)]">Bogus Portfolio Gamma:</strong> <code class="font-mono">riskagent.py:121</code> computes <code class="font-mono">total_gamma += quantity</code> for 1–14 DTE options — summing raw contract counts instead of Black-Scholes Gamma or Vega!</li>
+            <li><strong class="text-[var(--foreground)]">Blind to Affordable Tickers:</strong> <code class="font-mono">news.TICKER_PATTERNS</code> only has regexes for the 10 mega-caps (<code class="font-mono">NVDA..PLTR</code>). Negative headlines on <code class="font-mono">SOFI</code>, <code class="font-mono">INTC</code>, <code class="font-mono">RIVN</code>, <code class="font-mono">F</code>, and <code class="font-mono">IWM</code> are never tagged!</li>
+          </ul>
+        `;
+        authPill.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-400';
+        authPill.textContent = 'UNAUTHENTICATED /api/messages';
+        greeksBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-400';
+        greeksBadge.textContent = 'Bug: Contract Count Sum';
+        greeksGrid.innerHTML = [
+          ['Net Delta', '+142 sh', 'Computed via BS delta'],
+          ['Portfolio Gamma', '4.0 (Contracts?!)', 'BUG: sums raw qty for 1-14 DTE'],
+          ['Portfolio Vega', 'MISSING', 'Discarded by portfolio.enrich()'],
+          ['Daily Theta', '-$18.40 / day', 'Computed via BS theta'],
+        ].map(([k, v, sub], i) => `
+          <div class="p-2.5 rounded-lg border ${i === 1 || i === 2 ? 'border-rose-500/50 bg-rose-500/10' : 'border-[var(--border)] bg-[var(--background)]'}">
+            <div class="text-[11px] text-[var(--muted-foreground)]">${k}</div>
+            <div class="text-sm font-mono font-bold mt-0.5 ${i === 1 || i === 2 ? 'text-rose-400' : ''}">${v}</div>
+            <div class="text-[10px] text-[var(--muted-foreground)] mt-0.5">${sub}</div>
+          </div>
+        `).join('');
+        greeksDiff.innerHTML = `<span class="text-rose-400"># app/riskagent.py:121 (TODAY)</span><br/>if 1 &lt;= dte &lt;= 14:<br/>&nbsp;&nbsp;total_gamma += _num(p.get("quantity"))`;
+        syncBox.innerHTML = `<div class="text-[11px] text-[var(--muted-foreground)]">⚠️ Manual trades in <code class="font-mono">journal.db</code> never sync to <code class="font-mono">position_snapshots</code> when MCP is offline.</div>`;
+
+        newsBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-400';
+        newsBadge.textContent = '10 / 17 Tickers Covered';
+        newsFeed.innerHTML = [
+          { hl: 'SoFi Technologies faces regulatory scrutiny over loan book', sym: 'SOFI', status: 'UNTAGGED []', ok: false },
+          { hl: 'Intel foundry division delays next-gen node timeline', sym: 'INTC', status: 'UNTAGGED []', ok: false },
+          { hl: 'Rivian halts Georgia plant construction amid cash burn', sym: 'RIVN', status: 'UNTAGGED []', ok: false },
+          { hl: 'NVIDIA announces new Blackwell rack shipments', sym: 'NVDA', status: 'TAGGED ["NVDA"]', ok: true },
+        ].map(n => `
+          <div class="p-2.5 rounded-lg border ${n.ok ? 'border-[var(--border)] bg-[var(--background)]' : 'border-rose-500/40 bg-rose-500/10'}">
+            <div class="font-medium">${n.hl}</div>
+            <div class="flex items-center justify-between mt-1.5 font-mono text-[11px]">
+              <span class="text-[var(--muted-foreground)]">Expected: ${n.sym}</span>
+              <span class="${n.ok ? 'text-emerald-400' : 'text-rose-400 font-bold'}">${n.status}</span>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        banner.className = 'rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3.5 text-xs';
+        banner.innerHTML = `
+          <div class="font-semibold text-emerald-400 mb-1">Enhanced v2 Upgrades in Risk Manager &amp; Analyst:</div>
+          <ul class="list-disc list-inside space-y-0.5 text-[var(--muted-foreground)]">
+            <li><strong class="text-[var(--foreground)]">True Black-Scholes Portfolio Gamma &amp; Vega:</strong> <code class="font-mono">portfolio.enrich</code> rolls up signed <code class="font-mono">gamma_shares</code> ($\Gamma \times \text{qty} \times 100$) and <code class="font-mono">vega_usd</code> ($\mathcal{V} \times \text{qty} \times 100$).</li>
+            <li><strong class="text-[var(--foreground)]">Full 17-Ticker News &amp; ETF Regex Coverage:</strong> <code class="font-mono">TICKER_PATTERNS</code> covers <code class="font-mono">INTC</code>, <code class="font-mono">SOFI</code>, <code class="font-mono">F</code>, <code class="font-mono">RIVN</code>, <code class="font-mono">IWM</code>, <code class="font-mono">SPY</code>, and <code class="font-mono">QQQ</code> so negative news clusters properly trip the Pre-Trade Gate.</li>
+          </ul>
+        `;
+        authPill.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400';
+        authPill.textContent = '🔒 AUTH REQUIRED';
+        greeksBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400';
+        greeksBadge.textContent = 'True Black-Scholes Rollup';
+        greeksGrid.innerHTML = [
+          ['Net Delta', '+142.4 sh', 'Directional equity exposure'],
+          ['Gamma (1$ Move)', '+28.6 sh / $1', 'Signed BS gamma × qty × 100'],
+          ['Vega (1% IV)', '+$64.20 / 1% IV', 'Signed BS vega × qty × 100'],
+          ['Daily Theta', '-$18.40 / day', 'Time decay across 3 legs'],
+        ].map(([k, v, sub]) => `
+          <div class="p-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5">
+            <div class="text-[11px] text-[var(--muted-foreground)]">${k}</div>
+            <div class="text-sm font-mono font-bold text-emerald-400 mt-0.5">${v}</div>
+            <div class="text-[10px] text-[var(--muted-foreground)] mt-0.5">${sub}</div>
+          </div>
+        `).join('');
+        greeksDiff.innerHTML = `<span class="text-emerald-400"># app/portfolio.py + riskagent.py (v2)</span><br/>gamma_shares = round(bs["gamma"] * qty * mult * sign, 2)<br/>vega_usd = round(bs["vega"] * qty * mult * sign, 2)`;
+        syncBox.innerHTML = `
+          <button class="w-full py-1.5 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/40 text-xs font-mono font-semibold">
+            ⇄ Sync Open Journal Trades to Agent Snapshot (Fallback Mode)
+          </button>
+        `;
+
+        newsBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400';
+        newsBadge.textContent = '17 / 17 Tickers Covered';
+        newsFeed.innerHTML = [
+          { hl: 'SoFi Technologies faces regulatory scrutiny over loan book', sym: 'SOFI', status: 'TAGGED ["SOFI"] · GATE BLOCK', ok: true },
+          { hl: 'Intel foundry division delays next-gen node timeline', sym: 'INTC', status: 'TAGGED ["INTC"] · BEARISH', ok: true },
+          { hl: 'Rivian halts Georgia plant construction amid cash burn', sym: 'RIVN', status: 'TAGGED ["RIVN"] · BEARISH', ok: true },
+          { hl: 'Russell 2000 small-caps rally as yields ease', sym: 'IWM', status: 'TAGGED ["IWM"] · BULLISH', ok: true },
+        ].map(n => `
+          <div class="p-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5">
+            <div class="font-medium">${n.hl}</div>
+            <div class="flex items-center justify-between mt-1.5 font-mono text-[11px]">
+              <span class="text-[var(--muted-foreground)]">Ticker: ${n.sym}</span>
+              <span class="text-emerald-400 font-bold">${n.status}</span>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      const agents = [
+        { name: 'trader', role: 'Claude Opus 4.6 Loop', status: 'ACTIVE · 3m ago', detail: currentMode === 'v1' ? 'Reads blind news gate for SOFI/INTC' : 'Receives full 17-ticker gate + Pattern calibration' },
+        { name: 'analyst', role: 'News & LLM Sentiment', status: 'OK · 4m ago', detail: currentMode === 'v1' ? 'Regex only matches 10 mega-caps' : 'Matches all 17 watchlist tickers + ETFs' },
+        { name: 'position_manager', role: 'Stops, Rolls & Exits', status: 'OK · 2m ago', detail: '3 open legs priced · 0 unpriced' },
+        { name: 'risk_manager', role: 'Portfolio Greeks & Cap', status: 'OK · 5m ago', detail: currentMode === 'v1' ? 'Gamma = sum(quantity) bug' : 'True BS Delta, Gamma, Vega & Theta rollup' },
+        { name: 'pattern_engine', role: 'Self-Learning Calibration', status: currentMode === 'v1' ? 'PARTIAL (4/6 Buckets Empty)' : 'OK · All 6 Buckets Active', detail: currentMode === 'v1' ? 'Schema mismatch on score/action/ts' : 'Feeds live IV & weekday win rates to Trader' },
+      ];
+      nodesList.innerHTML = agents.map(a => `
+        <div class="p-2.5 rounded-lg border border-[var(--border)] bg-[var(--background)] flex items-center justify-between gap-2">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono font-bold">${a.name}</span>
+              <span class="text-[11px] text-[var(--muted-foreground)]">· ${a.role}</span>
+            </div>
+            <div class="text-[11px] text-[var(--muted-foreground)] mt-0.5">${a.detail}</div>
+          </div>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded shrink-0 ${a.status.includes('PARTIAL') ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}">${a.status}</span>
+        </div>
+      `).join('');
+    }
+
+    function renderChapter3() {
+      const banner = document.getElementById('ch3-banner');
+      const bridge = document.getElementById('schema-bridge-table');
+      const activeBadge = document.getElementById('pattern-active-buckets');
+      const matrix = document.getElementById('pattern-matrix-grid');
+
+      if (currentMode === 'v1') {
+        banner.className = 'rounded-xl border border-rose-500/40 bg-rose-500/10 p-3.5 text-xs';
+        banner.innerHTML = `
+          <div class="font-semibold text-rose-400 mb-1">Current v1 Bug: <code class="font-mono">app/patternagent.py</code> is ~70% Dead Code in Production</div>
+          <p class="text-[var(--muted-foreground)]">
+            <code class="font-mono">run_scan()</code> runs <code class="font-mono">SELECT * FROM agent_decisions</code>, where columns are <code class="font-mono">score</code>, <code class="font-mono">action</code>, and <code class="font-mono">ts</code>.
+            But <code class="font-mono">analyze_patterns()</code> looks up <code class="font-mono">d.get("signal_score")</code>, <code class="font-mono">d.get("instrument")</code>, <code class="font-mono">d.get("created")</code>, and <code class="font-mono">d.get("iv_percentile")</code> — so 4 of its 6 analytical buckets return <code class="font-mono">{}</code> forever!
+          </p>
+        `;
+        activeBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-400';
+        activeBadge.textContent = '2 / 6 Dimensions Working';
+        bridge.innerHTML = [
+          ['score', 'd.get("signal_score")', 'None → DEAD'],
+          ['action', 'd.get("instrument")', 'None → DEAD'],
+          ['ts / created_at', 'd.get("created")', 'None → DEAD'],
+          ['(missing col)', 'd.get("iv_percentile")', 'None → DEAD'],
+          ['symbol', 'd.get("symbol")', 'OK'],
+          ['confidence', 'd.get("confidence")', 'OK'],
+        ].map(([col, code, status]) => `
+          <div class="p-2 rounded border ${status.includes('DEAD') ? 'border-rose-500/40 bg-rose-500/10' : 'border-[var(--border)] bg-[var(--background)]'} flex items-center justify-between">
+            <div>
+              <div class="text-[var(--foreground)]">SQL: <span class="text-sky-400">${col}</span></div>
+              <div class="text-[10px] text-[var(--muted-foreground)]">Reads: ${code}</div>
+            </div>
+            <span class="${status.includes('DEAD') ? 'text-rose-400 font-bold' : 'text-emerald-400'}">${status}</span>
+          </div>
+        `).join('');
+
+        matrix.innerHTML = [
+          { title: '1. By IV Regime (by_iv_regime)', empty: true, reason: 'iv_percentile column missing in agent_decisions' },
+          { title: '2. By Signal Strength (by_signal_strength)', empty: true, reason: 'Reads d["signal_score"] instead of d["score"]' },
+          { title: '3. By Instrument (by_option_type)', empty: true, reason: 'Reads d["instrument"] instead of d["action"]' },
+          { title: '4. By Weekday (by_weekday)', empty: true, reason: 'Reads d["created"] instead of d["ts"] / d["created_at"]' },
+        ].map(b => `
+          <div class="p-3.5 rounded-lg border border-rose-500/30 bg-rose-500/5 flex flex-col justify-between h-36">
+            <div class="text-xs font-mono font-semibold text-rose-400">${b.title}</div>
+            <div class="text-center font-mono text-sm text-[var(--muted-foreground)]">{ } — EMPTY IN PROD</div>
+            <div class="text-[11px] font-mono text-rose-300/80">Bug: ${b.reason}</div>
+          </div>
+        `).join('');
+      } else {
+        banner.className = 'rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3.5 text-xs';
+        banner.innerHTML = `
+          <div class="font-semibold text-emerald-400 mb-1">Enhanced v2: Full 6-Dimension Self-Learning &amp; Trader Calibration</div>
+          <p class="text-[var(--muted-foreground)]">
+            <code class="font-mono">tracking.log_decision</code> persists <code class="font-mono">iv_rank</code> &amp; <code class="font-mono">regime</code>, and <code class="font-mono">patternagent.py</code> normalizes real <code class="font-mono">agent_decisions</code> columns (<code class="font-mono">score</code>, <code class="font-mono">action</code>, <code class="font-mono">ts</code>). High-IC findings automatically post <code class="font-mono">pattern_finding</code> calibration alerts to the Trader's inbox.
+          </p>
+        `;
+        activeBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400';
+        activeBadge.textContent = '6 / 6 Dimensions Active';
+        bridge.innerHTML = [
+          ['score', 'd.get("score")', 'FIXED ✓'],
+          ['action', 'd.get("action")', 'FIXED ✓'],
+          ['ts / created_at', 'd.get("ts") or d.get("created_at")', 'FIXED ✓'],
+          ['iv_rank (added)', 'd.get("iv_rank")', 'FIXED ✓'],
+          ['symbol', 'd.get("symbol")', 'ACTIVE ✓'],
+          ['confidence', 'd.get("confidence")', 'ACTIVE ✓'],
+        ].map(([col, code, status]) => `
+          <div class="p-2 rounded border border-emerald-500/30 bg-emerald-500/5 flex items-center justify-between">
+            <div>
+              <div class="text-[var(--foreground)]">SQL: <span class="text-sky-400">${col}</span></div>
+              <div class="text-[10px] text-[var(--muted-foreground)]">Reads: ${code}</div>
+            </div>
+            <span class="text-emerald-400 font-bold">${status}</span>
+          </div>
+        `).join('');
+
+        matrix.innerHTML = `
+          <div class="p-3 rounded-lg border border-[var(--border)] bg-[var(--background)] space-y-2">
+            <div class="text-xs font-mono font-semibold text-sky-400">1. By IV Regime (n=84)</div>
+            <div class="space-y-1.5 text-xs font-mono">
+              <div class="flex justify-between"><span>Low IV (&lt;30%)</span><span class="text-emerald-400 font-bold">68.4% Win (+1.92%)</span></div>
+              <div class="flex justify-between"><span>Mid IV (30–60%)</span><span class="text-emerald-400">58.1% Win (+0.84%)</span></div>
+              <div class="flex justify-between"><span>High IV (&gt;60%)</span><span class="text-rose-400 font-bold">37.5% Win (-1.45% · AVOID)</span></div>
+            </div>
+          </div>
+          <div class="p-3 rounded-lg border border-[var(--border)] bg-[var(--background)] space-y-2">
+            <div class="text-xs font-mono font-semibold text-sky-400">2. By Signal Strength (n=84)</div>
+            <div class="space-y-1.5 text-xs font-mono">
+              <div class="flex justify-between"><span>Strong (&ge;55)</span><span class="text-emerald-400 font-bold">71.2% Win (+2.35%)</span></div>
+              <div class="flex justify-between"><span>Moderate (35–55)</span><span class="text-amber-400">53.8% Win (+0.41%)</span></div>
+              <div class="flex justify-between"><span>Weak (&lt;35)</span><span class="text-rose-400">41.0% Win (-0.62%)</span></div>
+            </div>
+          </div>
+          <div class="p-3 rounded-lg border border-[var(--border)] bg-[var(--background)] space-y-2">
+            <div class="text-xs font-mono font-semibold text-sky-400">3. By Instrument Type</div>
+            <div class="space-y-1.5 text-xs font-mono">
+              <div class="flex justify-between"><span>Call Entries (n=52)</span><span class="text-emerald-400 font-bold">63.5% Win (+1.68%)</span></div>
+              <div class="flex justify-between"><span>Put Entries (n=32)</span><span class="text-amber-400">46.9% Win (-0.18%)</span></div>
+            </div>
+          </div>
+          <div class="p-3 rounded-lg border border-[var(--border)] bg-[var(--background)] space-y-2">
+            <div class="text-xs font-mono font-semibold text-sky-400">4. By Entry Weekday</div>
+            <div class="space-y-1.5 text-xs font-mono">
+              <div class="flex justify-between"><span>Tue / Wed Entries</span><span class="text-emerald-400 font-bold">66.7% Win (Best)</span></div>
+              <div class="flex justify-between"><span>Friday Entries</span><span class="text-rose-400 font-bold">40.9% Win (Weekend Theta)</span></div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function renderChapter4() {
+      const banner = document.getElementById('ch4-banner');
+      const sub = document.getElementById('backtest-subtitle');
+      const metrics = document.getElementById('backtest-metrics-row');
+      const dbList = document.getElementById('db-hardening-list');
+      const dbCode = document.getElementById('db-code-snippet');
+
+      if (currentMode === 'v1') {
+        banner.className = 'rounded-xl border border-rose-500/40 bg-rose-500/10 p-3.5 text-xs';
+        banner.innerHTML = `
+          <div class="font-semibold text-rose-400 mb-1">Current v1 Backtest &amp; Database Issues (<code class="font-mono">backtest.py</code>, <code class="font-mono">tracking.py</code>, <code class="font-mono">journal.py</code>):</div>
+          <ul class="list-disc list-inside space-y-0.5 text-[var(--muted-foreground)]">
+            <li><strong class="text-[var(--foreground)]">Naive 5x Option Proxy &amp; Same-Bar Close Entry:</strong> <code class="font-mono">option_proxy_return_pct</code> multiplies stock return by <code class="font-mono">5.0x</code> with zero theta decay or IV crush, overstating 10-day option holds by +30% to +60%.</li>
+            <li><strong class="text-[var(--foreground)]">SQLite Connection Leaks &amp; Dual Locks:</strong> <code class="font-mono">with _conn() as c:</code> does not close connections in Python <code class="font-mono">sqlite3</code>, and <code class="font-mono">journal._lock</code> vs <code class="font-mono">tracking._lock</code> are two separate locks on the same <code class="font-mono">journal.db</code> file without WAL mode.</li>
+          </ul>
+        `;
+        sub.textContent = 'Currently showing inflated v1 Naive 5x Stock Proxy (ignores Theta burn over bars_held and enters on same-bar close)';
+        metrics.innerHTML = [
+          ['Naive 5x Return (v1)', '+142.0% (Inflated)', 'text-amber-400'],
+          ['Theta Burn Modeled', '0.0% (Ignored!)', 'text-rose-400 font-bold'],
+          ['Execution Fill', 'Same-Bar Close (Bias)', 'text-rose-400'],
+          ['SQLite Connections', 'Leaked (No .close())', 'text-rose-400'],
+        ].map(([k, v, c]) => `<div class="p-2 rounded bg-[var(--background)] border border-[var(--border)]"><div class="text-[10px] text-[var(--muted-foreground)]">${k}</div><div class="${c} font-bold mt-0.5">${v}</div></div>`).join('');
+
+        dbList.innerHTML = [
+          ['SQLite Context Manager', 'with sqlite3.connect() as c: leaves FD open until GC', false],
+          ['Journal Mode', 'Default DELETE mode (locks across 5 daemon threads)', false],
+          ['Thread Lock Sharing', 'journal._lock != tracking._lock on same journal.db', false],
+          ['Repo Separation', 'onlymeyou/ couples app bundled inside trading repo', false],
+        ].map(([k, v, ok]) => `
+          <div class="p-2 rounded border border-rose-500/30 bg-rose-500/5">
+            <div class="font-mono font-semibold text-rose-400">✗ ${k}</div>
+            <div class="text-[11px] text-[var(--muted-foreground)] mt-0.5">${v}</div>
+          </div>
+        `).join('');
+        dbCode.innerHTML = `<span class="text-rose-400"># Today: leaks connection handle</span><br/>def _conn():<br/>&nbsp;&nbsp;return sqlite3.connect(DB_PATH)`;
+      } else {
+        banner.className = 'rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3.5 text-xs';
+        banner.innerHTML = `
+          <div class="font-semibold text-emerald-400 mb-1">Enhanced v2 Realistic Options Backtester &amp; Hardened SQLite WAL Engine:</div>
+          <ul class="list-disc list-inside space-y-0.5 text-[var(--muted-foreground)]">
+            <li><strong class="text-[var(--foreground)]">Black-Scholes Option Replay:</strong> Enters at bar <code class="font-mono">i+1</code> Open with 10 bps slippage and re-marks the 35-DTE option via <code class="font-mono">options.bs_price(S, K, T - bars_held/252, r, sigma)</code>.</li>
+            <li><strong class="text-[var(--foreground)]">Zero-Leak WAL Context Manager:</strong> Shared DB pool enables <code class="font-mono">PRAGMA journal_mode=WAL</code>, <code class="font-mono">busy_timeout=5000</code>, and guarantees <code class="font-mono">conn.close()</code> in a <code class="font-mono">finally</code> block.</li>
+          </ul>
+        `;
+        sub.textContent = 'Comparing v1 Naive 5x Proxy vs. v2 Next-Bar Open + Black-Scholes Theta/Vega Re-Pricing';
+        metrics.innerHTML = [
+          ['Realistic Option Return', '+84.6% (Net of Theta)', 'text-emerald-400'],
+          ['Cumulative Theta Drag', '-28.4% (Accurately Modeled)', 'text-sky-400'],
+          ['Execution Fill', 'Next-Bar Open + 10bps', 'text-emerald-400'],
+          ['SQLite WAL + Close()', '0 ResourceWarnings', 'text-emerald-400'],
+        ].map(([k, v, c]) => `<div class="p-2 rounded bg-[var(--background)] border border-[var(--border)]"><div class="text-[10px] text-[var(--muted-foreground)]">${k}</div><div class="${c} font-bold mt-0.5">${v}</div></div>`).join('');
+
+        dbList.innerHTML = [
+          ['Context Manager .close()', 'Guaranteed conn.close() in finally block (0 warnings)', true],
+          ['SQLite WAL + Busy Timeout', 'PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;', true],
+          ['Unified DB Lock', 'Single shared RLock across journal.py & tracking.py', true],
+          ['macOS Launchd Symlink Fix', 'os.path.realpath() in test_autotrade_sh.py', true],
+        ].map(([k, v]) => `
+          <div class="p-2 rounded border border-emerald-500/30 bg-emerald-500/5">
+            <div class="font-mono font-semibold text-emerald-400">✓ ${k}</div>
+            <div class="text-[11px] text-[var(--muted-foreground)] mt-0.5">${v}</div>
+          </div>
+        `).join('');
+        dbCode.innerHTML = `<span class="text-emerald-400">@contextlib.contextmanager</span><br/>def db_session():<br/>&nbsp;&nbsp;c = sqlite3.connect(DB_PATH)<br/>&nbsp;&nbsp;try: yield c; c.commit()<br/>&nbsp;&nbsp;finally: c.close()`;
+      }
+
+      drawBacktestChart();
+    }
+
+    function drawBacktestChart() {
+      const canvas = document.getElementById('backtestChartCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width;
+      const H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+      for (let y = 25; y < H - 25; y += 45) {
+        ctx.beginPath();
+        ctx.moveTo(45, y);
+        ctx.lineTo(W - 20, y);
+        ctx.stroke();
+      }
+
+      const naive = [100, 108, 115, 114, 126, 138, 135, 152, 168, 165, 189, 212, 242];
+      const realistic = [100, 105, 109, 106, 118, 125, 119, 134, 146, 141, 158, 171, 184.6];
+
+      const mapY = (v) => H - 28 - ((v - 90) / 165) * (H - 50);
+      const stepX = (W - 80) / (naive.length - 1);
+
+      // Naive 5x line (sky blue dashed in v2, solid in v1)
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.setLineDash(currentMode === 'v2' ? [5, 4] : []);
+      ctx.beginPath();
+      naive.forEach((v, i) => {
+        const x = 50 + i * stepX;
+        const y = mapY(v);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (currentMode === 'v2') {
+        // Realistic BS Option line (emerald solid)
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        realistic.forEach((v, i) => {
+          const x = 50 + i * stepX;
+          const y = mapY(v);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Shade theta drag gap
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.12)';
+        ctx.beginPath();
+        naive.forEach((v, i) => {
+          const x = 50 + i * stepX;
+          const y = mapY(v);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        for (let i = realistic.length - 1; i >= 0; i--) {
+          ctx.lineTo(50 + i * stepX, mapY(realistic[i]));
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = '10px monospace';
+        ctx.fillText('← Unmodeled Theta & Slippage Gap (-57.4%)', W - 295, mapY(205));
+      }
+    }
+
+    function renderChapter5() {
+      const verdict = document.getElementById('everyday-verdict-card');
+      const checklist = document.getElementById('everyday-checklist');
+      const riskBox = document.getElementById('everyday-risk-box');
+      const expPreview = document.getElementById('everyday-explainer-preview');
+      const optTicket = document.getElementById('everyday-option-ticket');
+      const slider = document.getElementById('budget-slider');
+      const budget = slider ? Number(slider.value) : 200;
+      const lbl = document.getElementById('budget-label');
+      if (lbl) lbl.textContent = '$' + budget;
+
+      const shares = (budget / 14.85).toFixed(1);
+      const maxLoss = Math.round(budget * (0.95 / 14.85));
+      const targetGain = Math.round(budget * (1.90 / 14.85));
+
+      if (currentTier === 'everyday') {
+        verdict.innerHTML = `
+          <div class="p-3 rounded-lg bg-emerald-500/15 border border-emerald-500/40">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-emerald-400">🟢 GOOD SETUP TO BUY</span>
+              <span class="text-[11px] font-mono text-emerald-300">Health: 82 / 100</span>
+            </div>
+            <p class="text-xs mt-1.5 leading-relaxed">
+              <strong>The Bottom Line:</strong> SOFI is in a steady upward trend and buyers are stepping in on higher volume. Recent news is positive and there are no earnings reports in the next 30 days.
+            </p>
+          </div>
+        `;
+        checklist.innerHTML = [
+          ['✅', 'Big-Picture Trend', 'Price is steadily climbing above its 1-month and 2-month averages.'],
+          ['✅', 'Buyer Activity', 'More shares are being bought on up-days than sold on down-days.'],
+          ['⚠️', 'Short-Term Pace', 'Up 4.2% today — buying on a small dip near $14.60 is safer than chasing.'],
+          ['📰', 'Live News Check', '3 positive headlines today (member growth); 0 negative alerts.'],
+        ].map(([icon, title, desc]) => `
+          <div class="p-2 rounded bg-[var(--background)] border border-[var(--border)] text-xs">
+            <div class="font-semibold">${icon} ${title}</div>
+            <div class="text-[11px] text-[var(--muted-foreground)] mt-0.5">${desc}</div>
+          </div>
+        `).join('');
+
+        riskBox.innerHTML = `
+          <div class="p-2.5 rounded-lg bg-[var(--background)] border border-[var(--border)] text-xs space-y-2">
+            <div class="flex justify-between">
+              <span class="text-[var(--muted-foreground)]">Shares you get for $${budget}:</span>
+              <span class="font-mono font-semibold">~${shares} shares</span>
+            </div>
+            <div class="flex justify-between items-center p-2 rounded bg-rose-500/10 border border-rose-500/30">
+              <div>
+                <div class="font-semibold text-rose-400">🛡️ Safety Exit ($13.90)</div>
+                <div class="text-[10px] text-[var(--muted-foreground)]">Sell here if the trend breaks</div>
+              </div>
+              <span class="font-mono font-bold text-rose-400">-$${maxLoss}</span>
+            </div>
+            <div class="flex justify-between items-center p-2 rounded bg-emerald-500/10 border border-emerald-500/30">
+              <div>
+                <div class="font-semibold text-emerald-400">🎯 Profit Goal ($16.75)</div>
+                <div class="text-[10px] text-[var(--muted-foreground)]">Realistic 3-4 week target</div>
+              </div>
+              <span class="font-mono font-bold text-emerald-400">+$${targetGain}</span>
+            </div>
+          </div>
+        `;
+        expPreview.innerHTML = `
+          <div class="font-semibold text-sky-400">📖 Plain-English Analogy (Safety Exit):</div>
+          <p class="text-[11px] text-[var(--muted-foreground)] mt-0.5">
+            Think of the Safety Exit ($13.90) like a seatbelt: if SOFI drops below its normal daily wiggle room, you step out with a small -$${maxLoss} scratch instead of riding a big drop down.
+          </p>
+        `;
+        optTicket.innerHTML = `
+          <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--border)] space-y-2">
+            <div class="font-semibold text-emerald-400">SOFI $15.00 Call · Expires in 35 Days</div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Total Cost Today:</span><span class="font-mono font-bold">$78 (Max Possible Loss)</span></div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Break-Even Stock Price:</span><span class="font-mono text-sky-400">$15.78 (+6.2%)</span></div>
+            <div class="flex justify-between"><span class="text-[var(--muted-foreground)]">Daily Time Cost:</span><span class="font-mono text-amber-400">-$1.20 / day</span></div>
+            <p class="text-[11px] text-[var(--muted-foreground)] pt-1.5 border-t border-[var(--border)]">
+              <strong>In Plain English:</strong> You put down $78 today. If SOFI rises above $15.78 before Nov 27, this contract profits. Even if SOFI drops to $0, you can never lose more than your $78.
+            </p>
+          </div>
+        `;
+      } else if (currentTier === 'trader') {
+        verdict.innerHTML = `
+          <div class="p-3 rounded-lg bg-sky-500/15 border border-sky-500/40">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-sky-400">⚡ TRADER VIEW · BUY (+64)</span>
+              <span class="text-[11px] font-mono text-emerald-400">REGIME: TREND</span>
+            </div>
+            <p class="text-xs mt-1.5">
+              20/50/200 MA stack aligned bullishly with expanding MACD histogram and OBV above 20-bar mean. Daily/Weekly confluence agrees.
+            </p>
+          </div>
+        `;
+        checklist.innerHTML = [
+          ['Trend Stack (25w)', '+25.0 pts · Close > SMA20 > SMA50 > SMA200'],
+          ['MACD Hist (20w)', '+20.0 pts · Histogram +0.18 and expanding'],
+          ['RSI-14 (15w)', '-3.0 pts · RSI 71.4 (softened in TREND regime)'],
+          ['Volume OBV (10w)', '+8.0 pts · OBV > 20-day SMA'],
+        ].map(([k, v]) => `
+          <div class="p-2 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-mono">
+            <div class="font-semibold text-sky-400">${k}</div>
+            <div class="text-[11px] text-[var(--muted-foreground)]">${v}</div>
+          </div>
+        `).join('');
+        riskBox.innerHTML = `
+          <div class="p-2.5 rounded-lg bg-[var(--background)] border border-[var(--border)] text-xs font-mono space-y-1.5">
+            <div class="flex justify-between"><span>Position Size ($${budget}):</span><span>${shares} sh</span></div>
+            <div class="flex justify-between text-rose-400"><span>Stop (1.5x ATR = $0.95):</span><span>$13.90 (-$${maxLoss} / -1R)</span></div>
+            <div class="flex justify-between text-emerald-400"><span>Target (3.0x ATR = $1.90):</span><span>$16.75 (+$${targetGain} / +2R)</span></div>
+            <div class="flex justify-between text-sky-400"><span>Reward : Risk Ratio:</span><span>2.0 : 1</span></div>
+          </div>
+        `;
+        expPreview.innerHTML = `<div class="font-semibold text-sky-400">⚡ Trader Rule:</div><p class="text-[11px] text-[var(--muted-foreground)] mt-0.5">Trail stop to breakeven ($14.85) once price clears +1.0x ATR ($15.48).</p>`;
+        optTicket.innerHTML = `
+          <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--border)] space-y-1.5 font-mono text-xs">
+            <div class="font-bold text-sky-400">BUY SOFI 35-DTE $15.00 CALL (0.37Δ)</div>
+            <div class="flex justify-between"><span>Mid / Spread:</span><span>$0.78 (Spread 3.8%)</span></div>
+            <div class="flex justify-between"><span>Delta / Gamma:</span><span>+0.37Δ / +0.14Γ</span></div>
+            <div class="flex justify-between"><span>Theta / IV Rank:</span><span>-$0.012/d · IVP 34%</span></div>
+            <div class="flex justify-between text-emerald-400"><span>Alt Vertical Spread:</span><span>$15/$17 Call Spread @ $0.46</span></div>
+          </div>
+        `;
+      } else {
+        verdict.innerHTML = `
+          <div class="p-3 rounded-lg bg-purple-500/15 border border-purple-500/40 font-mono">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-purple-400">🔬 QUANT VIEW · S = +64.0</span>
+              <span class="text-[11px] text-purple-300">ADX 31.4 · IVP 0.34</span>
+            </div>
+            <p class="text-[11px] mt-1.5 text-[var(--muted-foreground)]">
+              Composite score S = 100 * sum(w_i * d_i) / sum(w_i). Neutral sma200 warm-up guard active; TREND regime suppresses RSI mean-reversion penalty.
+            </p>
+          </div>
+        `;
+        checklist.innerHTML = [
+          ['Trend Vector', 'd_trend = 0.5(+1) + 0.3(+1) + 0.2(+1) = +1.00'],
+          ['ATR(14) Wilder', 'ATR_14 = $0.633 (4.26% daily vol)'],
+          ['Black-Scholes Inputs', 'S=14.85, K=15.0, T=0.0959y, r=0.045, sigma=0.518'],
+          ['Pattern Engine Prior', 'P(hit | strong, low_iv, call) = 0.71 (n=14)'],
+        ].map(([k, v]) => `
+          <div class="p-2 rounded bg-[var(--background)] border border-[var(--border)] text-xs font-mono">
+            <div class="font-semibold text-purple-400">${k}</div>
+            <div class="text-[11px] text-[var(--muted-foreground)]">${v}</div>
+          </div>
+        `).join('');
+        riskBox.innerHTML = `
+          <div class="p-2.5 rounded-lg bg-[var(--background)] border border-[var(--border)] text-xs font-mono space-y-1.5">
+            <div class="flex justify-between"><span>Notional / Cap Util:</span><span>$${budget} / $300 (${Math.round(budget/3)}%)</span></div>
+            <div class="flex justify-between"><span>Half-Kelly f*:</span><span>13.8% of risk budget</span></div>
+            <div class="flex justify-between"><span>Stop Distance:</span><span>1.5 * ATR_14 = 2.12 sigma_1d</span></div>
+            <div class="flex justify-between"><span>Expected Value E[R]:</span><span>+0.55R per trade</span></div>
+          </div>
+        `;
+        expPreview.innerHTML = `<div class="font-semibold text-purple-400 font-mono">🔬 Quant Note:</div><p class="text-[11px] text-[var(--muted-foreground)] font-mono mt-0.5">Option proxy includes -1.1%/bar theta drag + 1.5% round-trip spread cost.</p>`;
+        optTicket.innerHTML = `
+          <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--border)] space-y-1.5 font-mono text-xs">
+            <div class="font-bold text-purple-400">BS GREEKS (1x $15C, T=35/365)</div>
+            <div class="flex justify-between"><span>d1 / d2:</span><span>-0.198 / -0.358</span></div>
+            <div class="flex justify-between"><span>DeltaShares / GammaShares:</span><span>+37.0 sh / +14.2 sh/$1</span></div>
+            <div class="flex justify-between"><span>ThetaPerDay / VegaUSD:</span><span>-$1.20/d / +$1.74/1%IV</span></div>
+          </div>
+        `;
+      }
+    }
+
+    function renderAll() {
+      renderTopBar();
+      if (currentChapter === 1) renderChapter1();
+      if (currentChapter === 2) renderChapter2();
+      if (currentChapter === 3) renderChapter3();
+      if (currentChapter === 4) renderChapter4();
+      if (currentChapter === 5) renderChapter5();
+    }
+
+    // Initialize on Chapter 5 (Everyday Investor North Star)
+    setMode('v2');
+    setChapter(5);
+  </script>
+</body>
+</html>
