@@ -163,20 +163,97 @@ async function api(path, timeoutMs = 45000) {
   return r.json();
 }
 
-/* ---------------- tabs ---------------- */
+/* ---------------- 3-tier understanding level & deep-dive explainer ---------------- */
+
+const WATCHLIST_17 = [
+  "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AMD", "AVGO", "PLTR",
+  "INTC", "SOFI", "F", "RIVN", "SPY", "QQQ", "IWM"
+];
+
+let userLevel = localStorage.getItem("tp_level") || "trader"; // "beginner" | "trader" | "quant"
+let lastAgentBrief = null;
+let lastAnalysisData = null;
+let lastOptionsData = null;
+let currentExplainerTopic = "full_setup";
+let currentExplainerCtx = {};
+
+const LEVEL_BANNERS = {
+  beginner: "🌱 <b>Beginner Mode (Guided Coach):</b> Plain-English translations, exact dollar risk/reward, and step-by-step guidance. Tap any card with <b>ⓘ Explain</b> or press <b>📖 Explain</b> for the full story.",
+  trader: "⚡ <b>Trader Mode (Active Swing):</b> Actionable technical setups, ATR stops/targets, and 30–45 DTE option plans. Tap any metric or <b>📖 Explain</b> for a full deep dive.",
+  quant: "🔬 <b>Quant Mode (Pro Surface):</b> Full Black-Scholes Greeks, IV percentiles vs. realized vol, factor weights, and statistical backtest diagnostics. Tap any metric to inspect.",
+};
+
+function syncLevelUI() {
+  document.querySelectorAll("#level-switcher button, .drawer-levels button").forEach(b => {
+    b.classList.toggle("active", b.dataset.level === userLevel);
+  });
+  const banner = $("#level-banner-desc");
+  if (banner) banner.innerHTML = LEVEL_BANNERS[userLevel] || LEVEL_BANNERS.trader;
+}
+
+function setLevel(lvl) {
+  if (!["beginner", "trader", "quant"].includes(lvl)) return;
+  userLevel = lvl;
+  localStorage.setItem("tp_level", lvl);
+  syncLevelUI();
+  if (lastAgentBrief && activeTab() === "dashboard") renderAgentBrief(lastAgentBrief);
+  if (lastAnalysisData && activeTab() === "analyze") renderAnalysisView(lastAnalysisData);
+  if (lastOptionsData && activeTab() === "options") renderOptionsView(lastOptionsData);
+  if (activeTab() === "news") renderNews();
+  const drawer = $("#detail-drawer");
+  if (drawer && !drawer.hidden) renderExplainerBody(currentExplainerTopic, currentExplainerCtx);
+}
+
+document.querySelectorAll("#level-switcher button, .drawer-levels button").forEach(btn => {
+  btn.addEventListener("click", () => setLevel(btn.dataset.level));
+});
+
+/* ---------------- tabs & mobile bottom nav ---------------- */
 
 document.querySelectorAll("#tabs button").forEach(btn => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
+document.querySelectorAll("#mobile-nav button[data-tab]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    $("#mobile-more-sheet").hidden = true;
+    switchTab(btn.dataset.tab);
+  });
+});
+
+if ($("#mobile-more-btn")) {
+  $("#mobile-more-btn").addEventListener("click", () => {
+    const sheet = $("#mobile-more-sheet");
+    sheet.hidden = !sheet.hidden;
+  });
+}
+if ($("#mobile-more-close")) {
+  $("#mobile-more-close").addEventListener("click", () => {
+    $("#mobile-more-sheet").hidden = true;
+  });
+}
+document.querySelectorAll("#mobile-more-sheet button[data-tab]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    $("#mobile-more-sheet").hidden = true;
+    switchTab(btn.dataset.tab);
+  });
+});
+
 function switchTab(name) {
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  const primaryMobile = ["dashboard", "analyze", "options", "news"];
+  document.querySelectorAll("#mobile-nav button[data-tab]").forEach(b => {
+    b.classList.toggle("active", b.dataset.tab === name);
+  });
+  const moreBtn = $("#mobile-more-btn");
+  if (moreBtn) moreBtn.classList.toggle("active", !primaryMobile.includes(name));
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + name));
   loadTab(name);
 }
 
 function activeTab() {
-  return document.querySelector("#tabs button.active").dataset.tab;
+  const el = document.querySelector("#tabs button.active");
+  return el ? el.dataset.tab : "dashboard";
 }
 
 function loadTab(name) {
@@ -199,6 +276,434 @@ $("#go-btn").addEventListener("click", () => {
   else loadTab(tab);
 });
 $("#ticker-input").addEventListener("keydown", e => { if (e.key === "Enter") $("#go-btn").click(); });
+
+if ($("#explain-all-btn")) {
+  $("#explain-all-btn").addEventListener("click", () => {
+    openExplainer("full_setup", { ticker: currentTicker, brief: lastAgentBrief, analysis: lastAnalysisData, options: lastOptionsData });
+  });
+}
+
+/* ---------------- full-detail interactive explainer engine ---------------- */
+
+const EXPLAINER_CATALOG = {
+  signal_score: {
+    title: "Composite Signal Score (-100 to +100)",
+    kicker: "TECHNICAL CONVICTION",
+    beginner: (c) => `
+      <div class="drawer-section">
+        <h4>🌱 Plain-English Meaning</h4>
+        <p>Think of the <b>Signal Score</b> as a weather forecast for <b>${c.ticker || currentTicker}</b> on a scale from <b>-100 (stormy downtrend)</b> to <b>+100 (clear uptrend)</b>.</p>
+        <p>Right now, <b>${c.ticker || currentTicker}</b> scores <b>${c.val ?? "–"}</b> (${c.label || "Rated"}). Scores above <b>+20</b> mean buyers are pushing the stock higher; below <b>-15</b> means sellers are in control; between -15 and +20 means the stock is choppy so waiting is safer.</p>
+      </div>
+      <div class="drawer-section">
+        <h4>💡 How to Use It</h4>
+        <p>· <b>+45 to +100 (STRONG BUY):</b> All major trend and volume checks agree upward.<br>
+        · <b>+20 to +44 (BUY):</b> Uptrend is forming, keep position sizes modest.<br>
+        · <b>-14 to +19 (NEUTRAL):</b> Sideways tug-of-war — avoid buying expiring options here because time decay eats sideways trades.</p>
+      </div>`,
+    trader: (c) => `
+      <div class="drawer-section">
+        <h4>⚡ Swing Trader Breakdown</h4>
+        <p><b>${c.ticker || currentTicker}</b> prints a composite score of <b>${c.val ?? "–"} (${c.label || ""})</b>. This blends 5 indicator groups: <b>Trend (30%)</b>, <b>Momentum (25%)</b>, <b>Volume (20%)</b>, <b>Mean Reversion (15%)</b>, and <b>Volatility (10%)</b>.</p>
+        <p>Always check <b>Weekly Confluence</b> alongside the daily score: when both daily and weekly timeframes agree, historical win rates improve significantly.</p>
+      </div>`,
+    quant: (c) => `
+      <div class="drawer-section">
+        <h4>🔬 Quantitative Specification</h4>
+        <p>Weighted linear combination mapped to $[-100, +100]$: Trend ($0.30$: SMA20/50/200 stack + slope), Momentum ($0.25$: MACD histogram sign/acceleration + 10d ROC), Volume ($0.20$: 20d relative volume confirmation + OBV slope), Mean-Reversion ($0.15$: RSI-14 + Bollinger %B), and Volatility ($0.10$: BB width squeeze).</p>
+      </div>`
+  },
+  atm_iv: {
+    title: "Implied Volatility (ATM IV %)",
+    kicker: "OPTION PRICING & VEGA RISK",
+    beginner: (c) => `
+      <div class="drawer-section">
+        <h4>🌱 Plain-English Meaning</h4>
+        <p><b>Implied Volatility (IV)</b> tells you whether option contracts on <b>${c.ticker || currentTicker}</b> are currently <b>on sale</b> or <b>marked up like surge-priced Uber rides</b>.</p>
+        <p>Current reading: <b>${c.val ?? "–"}%</b>. Higher IV means the market expects big price swings (often right before earnings), making options expensive to buy.</p>
+      </div>
+      <div class="drawer-section">
+        <h4>⚠️ Watch Out for "IV Crush"</h4>
+        <p>If you buy an expensive high-IV option right before a big announcement, the stock can move your way and the option can <i>still lose value</i> once the suspense is over and IV drops.</p>
+      </div>`,
+    trader: (c) => `
+      <div class="drawer-section">
+        <h4>⚡ Active Trader Rules</h4>
+        <p>At <b>${c.val ?? "–"}% ATM IV</b>: when IV is cheap-to-fair (&lt;50th percentile vs realized volatility), long calls/puts offer clean leverage. When IV is elevated (&gt;70th percentile), prefer <b>vertical debit spreads</b> so the short leg offsets Vega and Theta.</p>
+      </div>`,
+    quant: (c) => `
+      <div class="drawer-section">
+        <h4>🔬 Quantitative Specification</h4>
+        <p>Annualized implied standard deviation $\\sigma_{\\text{imp}}$ backed out of the nearest-to-spot strike price via Black-Scholes-Merton. Compare against 20-day historical realized volatility ($\\sigma_{\\text{RV20}} = \\text{std}(\\ln(S_t/S_{t-1}))\\sqrt{252}$) to measure the Volatility Risk Premium (VRP).</p>
+      </div>`
+  },
+  expected_move: {
+    title: "Expected Move (±$ Range by Expiry)",
+    kicker: "IMPLIED PROBABILITY CONE",
+    beginner: (c) => `
+      <div class="drawer-section">
+        <h4>🌱 Plain-English Meaning</h4>
+        <p>The options market is pricing in a <b>${c.val || "±$–"}</b> move for <b>${c.ticker || currentTicker}</b> between now and expiration (~68% one-standard-deviation range).</p>
+        <p>If you buy a call option, make sure your <b>breakeven price</b> (Strike + Option Cost) sits comfortably <i>inside</i> this expected move—otherwise you are betting on a rare outlier jump.</p>
+      </div>`,
+    trader: (c) => `
+      <div class="drawer-section">
+        <h4>⚡ Strike &amp; Target Selection</h4>
+        <p>Implied move is <b>${c.val || "–"}</b>. Use the upper/lower expected-move boundaries to set realistic profit-taking targets or to pick the short strike on a vertical debit spread.</p>
+      </div>`,
+    quant: (c) => `
+      <div class="drawer-section">
+        <h4>🔬 Formula</h4>
+        <p>$$\\text{Expected Move} \\approx S_0 \\cdot \\sigma_{\\text{ATM}} \\cdot \\sqrt{\\frac{\\text{DTE}}{365}}$$ Represents the 1-$\\sigma$ ($\\approx 68.2\\%$) terminal lognormal distribution band under risk-neutral pricing.</p>
+      </div>`
+  },
+  put_call_ratio: {
+    title: "Put / Call Ratio (Crowd Positioning)",
+    kicker: "OPTIONS FLOW SENTIMENT",
+    beginner: (c) => `
+      <div class="drawer-section">
+        <h4>🌱 Plain-English Meaning</h4>
+        <p>Compares how many bearish <b>Put</b> contracts vs. bullish <b>Call</b> contracts are trading on <b>${c.ticker || currentTicker}</b> (Current: <b>${c.val ?? "–"}</b>).</p>
+        <p>· <b>Below 0.70:</b> Traders are heavily buying Calls (bullish optimism).<br>
+        · <b>0.70 to 1.00:</b> Balanced positioning.<br>
+        · <b>Above 1.10:</b> Heavy Put buying (hedging or bearish fear).</p>
+      </div>`,
+    trader: (c) => `
+      <div class="drawer-section">
+        <h4>⚡ Flow Confirmation vs. Contrarian Extremes</h4>
+        <p>Volume P/C captures today's urgency; Open Interest P/C captures sticky multi-day positioning. Sub-0.75 confirms bullish breakouts; extreme spikes (&gt;1.5) near support often mark capitulation bottoms.</p>
+      </div>`,
+    quant: (c) => `
+      <div class="drawer-section">
+        <h4>🔬 Flow Ratio</h4>
+        <p>$\\text{PCR}_{\\text{vol}} = \\frac{\\sum V_{\\text{put}}}{\\sum V_{\\text{call}}}$ across all strikes in the selected expiration series.</p>
+      </div>`
+  },
+  max_pain: {
+    title: "Max Pain Strike Price",
+    kicker: "EXPIRATION PINNING MAGNET",
+    beginner: (c) => `
+      <div class="drawer-section">
+        <h4>🌱 Plain-English Meaning</h4>
+        <p><b>Max Pain (${c.val ? fmt$(c.val) : "–"})</b> is the stock price where the largest number of open option contracts would expire worthless.</p>
+        <p>It matters most in the <b>final 2 to 5 days before expiration</b>, when market makers hedging their books can create a mild "gravity pull" toward this price.</p>
+      </div>`,
+    trader: (c) => `
+      <div class="drawer-section">
+        <h4>⚡ How Traders Use Max Pain</h4>
+        <p>Treat Max Pain (<b>${c.val ? fmt$(c.val) : "–"}</b>) as a secondary reference during OpEx week when dealer gamma hedging is largest, never as a standalone directional trigger at 30+ DTE.</p>
+      </div>`,
+    quant: (c) => `
+      <div class="drawer-section">
+        <h4>🔬 Objective Function</h4>
+        <p>$$K^* = \\arg\\min_K \\sum_i \\left( \\text{OI}_{\\text{call},i}\\max(0, K - K_i) + \\text{OI}_{\\text{put},i}\\max(0, K_i - K) \\right)$$</p>
+      </div>`
+  },
+  earnings: {
+    title: "Earnings Catalyst Countdown",
+    kicker: "BINARY EVENT RISK",
+    beginner: (c) => `
+      <div class="drawer-section">
+        <h4>🌱 Plain-English Meaning</h4>
+        <p>Next earnings date for <b>${c.ticker || currentTicker}</b>: <b>${c.val || "–"}</b>.</p>
+        <p>Holding a basic call or put option overnight through an earnings report is like flipping a coin at a casino table with inflated ticket prices: even if you guess the direction right, <b>IV Crush</b> can wipe out 30–60% of the option's value at the 9:30 AM open.</p>
+      </div>`,
+    trader: (c) => `
+      <div class="drawer-section">
+        <h4>⚡ Pre-Earnings Rulebook</h4>
+        <p>If earnings is within <b>14 days</b>, either exit directional swing options <i>before</i> the bell before the report, or structure the trade as a defined-risk vertical spread.</p>
+      </div>`,
+    quant: (c) => `
+      <div class="drawer-section">
+        <h4>🔬 Term Structure Jump</h4>
+        <p>Front-month implied variance decomposes into diffusion variance plus a discrete earnings jump variance $\\sigma_{\\text{earn}}^2$. Post-announcement, $\\sigma_{\\text{earn}}^2 \\to 0$ instantaneously.</p>
+      </div>`
+  },
+  win_rate: {
+    title: "Historical Backtest Win Rate & Track Record",
+    kicker: "EMPIRICAL VALIDATION",
+    beginner: (c) => `
+      <div class="drawer-section">
+        <h4>🌱 Plain-English Meaning</h4>
+        <p>Before risking money, this app tests its own signal rules on 2–3 years of past <b>${c.ticker || currentTicker}</b> price history. A <b>${c.val ?? "–"}</b> win rate shows what percentage of past setups on this exact stock finished profitable.</p>
+      </div>`,
+    trader: (c) => `
+      <div class="drawer-section">
+        <h4>⚡ Evaluating Win Rate With Profit Factor</h4>
+        <p>Win rate (<b>${c.val ?? "–"}</b>) must be read alongside <b>Profit Factor</b> and <b>Average Win vs. Average Loss</b>. With a 2:1 reward-to-risk target ($3\\times\\text{ATR}$ target vs $1.5\\times\\text{ATR}$ stop), even a 45% win rate is solidly profitable.</p>
+      </div>`,
+    quant: (c) => `
+      <div class="drawer-section">
+        <h4>🔬 Expectancy Identity</h4>
+        <p>$$E[R] = p_{\\text{win}}\\cdot \\overline{R}_{\\text{win}} - (1 - p_{\\text{win}})\\cdot |\\overline{R}_{\\text{loss}}|$$</p>
+      </div>`
+  },
+  profit_factor: {
+    title: "Profit Factor (Gross Wins ÷ Gross Losses)",
+    kicker: "RISK EFFICIENCY",
+    beginner: (c) => `
+      <div class="drawer-section">
+        <h4>🌱 Plain-English Meaning</h4>
+        <p><b>Profit Factor (${c.val ?? "–"})</b> tells you how many dollars the strategy made on winning trades for every $1.00 it lost on losing trades.</p>
+        <p>· <b>Below 1.0:</b> Lost money overall.<br>· <b>1.2 to 1.5:</b> Solid edge.<br>· <b>Above 1.6:</b> Strong historical edge on this ticker.</p>
+      </div>`,
+    trader: (c) => `
+      <div class="drawer-section">
+        <h4>⚡ Strategy Filter</h4>
+        <p>Prefer tickers where Profit Factor &ge; 1.25 over at least 10 historical trades.</p>
+      </div>`,
+    quant: (c) => `
+      <div class="drawer-section">
+        <h4>🔬 Definition</h4>
+        <p>$\\text{PF} = \\frac{\\sum_{r_i > 0} r_i}{\\sum_{r_j < 0} |r_j|}$ across all closed out-of-bar backtest trades.</p>
+      </div>`
+  },
+  dte: {
+    title: "Days to Expiration (DTE) & Time Decay (Theta)",
+    kicker: "THE 30–45 DTE RULE",
+    beginner: (c) => `
+      <div class="drawer-section">
+        <h4>🌱 Plain-English Meaning</h4>
+        <p><b>DTE (${c.val ?? "–"} days)</b> is the countdown clock until the option expires. Every option loses a slice of value each day called <b>Theta (Time Decay)</b>.</p>
+        <p>Options with <b>30 to 45 days left</b> decay slowly (~1–2% per day), giving your trade time to work. Options under <b>14 days</b> melt like ice cubes on hot pavement.</p>
+      </div>`,
+    trader: (c) => `
+      <div class="drawer-section">
+        <h4>⚡ Sweet-Spot Mechanics</h4>
+        <p>Enter directional swings at <b>30–45 DTE</b> and plan to exit or roll before <b>14–21 DTE</b> so you hold during the flat part of the Theta curve and exit before the steep decay cliff.</p>
+      </div>`,
+    quant: (c) => `
+      <div class="drawer-section">
+        <h4>🔬 Theta Scaling</h4>
+        <p>At-the-money Black-Scholes Theta scales as $\\Theta_{\\text{ATM}} \\propto -\\frac{S\\sigma}{2\\sqrt{T}}$. As $T \\to 0$, daily decay diverges as $T^{-1/2}$.</p>
+      </div>`
+  },
+  headline: {
+    title: "Live News Sentiment & Pre-Trade Gate Impact",
+    kicker: "CATALYST & SENTIMENT ENGINE",
+    beginner: (c) => `
+      <div class="drawer-section">
+        <h4>🌱 Why This Headline Matters</h4>
+        <p><b>Headline:</b> "${esc(c.title || "Market news feed")}"</p>
+        <p><b>Detected Tone:</b> <span class="pill ${c.sentiment === "positive" ? "BUY" : c.sentiment === "negative" ? "SELL" : "NEUTRAL"}">${(c.sentiment || "neutral").toUpperCase()}</span>
+        ${(c.words && c.words.length) ? ` (Trigger words: <b>${esc(c.words.join(", "))}</b>)` : ""}</p>
+        <p>Single headlines create short-term noise, but when <b>2 or more negative headlines</b> hit the same stock within a few hours (a <b>News Cluster</b>), our Analyst agent automatically raises a caution flag so you don't buy into a falling knife.</p>
+      </div>`,
+    trader: (c) => `
+      <div class="drawer-section">
+        <h4>⚡ Catalyst &amp; Gate Rules</h4>
+        <p><b>Headline:</b> "${esc(c.title || "Market news feed")}" (${esc(c.source || "Feed")})</p>
+        <p>Tagged Tickers: <b>${(c.tickers && c.tickers.length) ? c.tickers.join(", ") : "Broad Market / Macro"}</b> · Matched Stems: <b>${(c.words && c.words.length) ? c.words.join(", ") : "None (Neutral)"}</b>.</p>
+        <p>Use positive news clusters to confirm high-volume technical breakouts; treat negative clusters as an immediate hard veto on new long calls.</p>
+      </div>`,
+    quant: (c) => `
+      <div class="drawer-section">
+        <h4>🔬 Inflected Stem &amp; LLM Hybrid Classifier</h4>
+        <p>Deterministic regex stemmer (<code class="font-mono">app/news.py</code>) catches inflected present/progressive/past financial verbs across 17 watchlist regex patterns, supplemented by Claude Haiku semantic rescoring (<code class="font-mono">app/llmsentiment.py</code>) and enforced by the 12-hour standing alert window in <code class="font-mono">app/gate.py</code>.</p>
+      </div>`
+  }
+};
+
+function renderFullSetupWalkthrough(ctx) {
+  const tk = ctx.ticker || currentTicker;
+  const b = ctx.brief || lastAgentBrief;
+  if (!b || !b.signal) {
+    return `
+      <div class="drawer-section">
+        <h4>Loading ${esc(tk)} Setup…</h4>
+        <p>Select a ticker on the Dashboard or click <b>Analyze</b> so we can build a complete personalized walkthrough using live market numbers.</p>
+      </div>`;
+  }
+  const sig = b.signal || {};
+  const opt = b.options || {};
+  const rec = opt.recommendation || {};
+  const sug = rec.suggestion;
+  const bt = b.backtest || {};
+  const px = b.quote?.price;
+  const atr = sig.atr || (px ? +(px * 0.025).toFixed(2) : 1);
+  const stopPx = px ? (sig.score >= 0 ? +(px - 1.5 * atr).toFixed(2) : +(px + 1.5 * atr).toFixed(2)) : null;
+  const targetPx = px ? (sig.score >= 0 ? +(px + 3.0 * atr).toFixed(2) : +(px - 3.0 * atr).toFixed(2)) : null;
+  const contractCost = sug?.est_mid_price ? +(sug.est_mid_price * 100).toFixed(0) : null;
+  const pctMeter = Math.max(5, Math.min(95, Math.round((sig.score + 100) / 2)));
+
+  if (userLevel === "beginner") {
+    return `
+      <div class="drawer-section">
+        <h4>1 · Big-Picture Verdict for ${esc(tk)} (${fmt$(px)})</h4>
+        <p>Right now <b>${esc(tk)}</b> has a score of <b>${sig.score >= 0 ? "+" : ""}${sig.score} (${sig.label})</b>.</p>
+        <div class="meter-bar"><div class="meter-fill" style="width:${pctMeter}%"></div></div>
+        <p>${sig.score >= 20
+          ? `Buyers are pushing <b>${esc(tk)}</b> upward. The trend and momentum favor looking for a <b>bullish (upward)</b> setup.`
+          : sig.score <= -15
+          ? `Sellers are pushing <b>${esc(tk)}</b> downward. Avoid buying calls against a falling trend; only bearish setups make sense here.`
+          : `<b>${esc(tk)}</b> is moving sideways in a tug-of-war. When a stock has no clear trend, the smartest move for a beginner is to <b>wait on the sidelines</b> so option time decay doesn't slowly drain your cash.`}</p>
+      </div>
+      <div class="drawer-section">
+        <h4>2 · Stock Price Guardrails (Where to Exit)</h4>
+        <p>Never enter a trade without knowing two prices in advance:<br>
+        · <b>Safety Stop Price (${fmt$(stopPx)}):</b> Based on ${esc(tk)}'s normal daily bounce (ATR ${fmt$(sig.atr)}), if the stock crosses ${fmt$(stopPx)}, the setup is broken—exit to protect your capital.<br>
+        · <b>Profit Target (${fmt$(targetPx)}):</b> A realistic 2-to-1 reward target where you lock in gains.</p>
+      </div>
+      <div class="drawer-section">
+        <h4>3 · Options Plan in Real Dollars</h4>
+        ${sug ? `<p><b>Suggested Contract:</b> ${esc(sug.action)} <b>${esc(tk)} $${sug.strike}</b> expiring <b>${esc(sug.expiry)}</b> (${sug.dte} days left).</p>
+        <p>· <b>Cost for 1 Contract (100 shares):</b> ~<b>$${contractCost}</b> (${fmt$(sug.est_mid_price)} × 100). This is the maximum you can lose.<br>
+        · <b>Win Chance / Delta (${sug.delta}):</b> Moves ~${fmt$(Math.abs(sug.delta || 0.5) * 100)} for every $1 move in ${esc(tk)} stock.<br>
+        · <b>Why ${sug.dte} Days?</b> Gives the trade time to work before steep time decay kicks in.</p>`
+        : `<p>Because the signal or volatility setup doesn't offer a clean edge right now, the engine recommends <b>NO OPTION TRADE</b> today. Preserving cash is a win.</p>`}
+      </div>
+      <div class="drawer-section">
+        <h4>4 · Historical Track Record &amp; News Check</h4>
+        <p>· <b>Past Win Rate on ${esc(tk)}:</b> <b>${bt.win_rate ?? "–"}%</b> over ${bt.num_trades ?? 0} past trades (Profit Factor: <b>${bt.profit_factor ?? "–"}</b>).<br>
+        · <b>Next Earnings:</b> <b>${b.earnings?.next_earnings ?? "None soon"}</b> ${b.earnings?.days_until != null ? `(${b.earnings.days_until} days away)` : ""}.</p>
+      </div>`;
+  }
+
+  if (userLevel === "trader") {
+    return `
+      <div class="drawer-section">
+        <h4>1 · Multi-Timeframe &amp; Signal Read (${esc(tk)} @ ${fmt$(px)})</h4>
+        <p>Daily Composite: <b>${sig.score >= 0 ? "+" : ""}${sig.score} (${sig.label})</b> · Weekly Confluence: <b>${b.confluence?.weekly_label || "–"} (${b.confluence?.state || "–"})</b> · RSI(14): <b>${sig.rsi ?? "–"}</b> · ATR(14): <b>${fmt$(sig.atr)}</b>.</p>
+        <div class="meter-bar"><div class="meter-fill" style="width:${pctMeter}%"></div></div>
+        <p><b>Key Indicator Votes:</b></p>
+        <ul class="reasons">${(sig.votes || []).map(v => `<li><b>${esc(v.component)} (${v.score >= 0 ? "+" : ""}${v.score}):</b> ${esc(v.reason)}</li>`).join("")}</ul>
+      </div>
+      <div class="drawer-section">
+        <h4>2 · Risk Geometry &amp; Options Structure</h4>
+        <p>· <b>Underlying Stop (1.5×ATR):</b> ${fmt$(stopPx)} · <b>Target (3.0×ATR):</b> ${fmt$(targetPx)} (2.0R).<br>
+        · <b>ATM IV:</b> ${opt.atm_iv ?? "–"}% (${opt.iv_context?.label || "–"}, ${opt.iv_context?.percentile ?? "–"}th pctile vs RV20) · <b>Expected Move:</b> ±$${opt.expected_move ?? "–"} (±${opt.expected_move_pct ?? "–"}%).</p>
+        ${sug ? `<p><b>Primary Contract:</b> ${esc(sug.action)} $${sug.strike} exp ${esc(sug.expiry)} (${sug.dte} DTE, Δ ${sug.delta}, mid ${fmt$(sug.est_mid_price)} = ~$${contractCost}/contract).</p>` : ""}
+        ${rec.spread ? `<p><b>Defined-Risk Spread:</b> ${esc(rec.spread.name)} ($${rec.spread.buy_strike}/$${rec.spread.sell_strike}) for ${fmt$(rec.spread.net_debit)} debit (${rec.spread.reward_risk}:1 R:R, BE $${rec.spread.breakeven}).</p>` : ""}
+      </div>
+      <div class="drawer-section">
+        <h4>3 · Empirical Scorecard &amp; Catalysts</h4>
+        <p>2Y Backtest: <b>${bt.win_rate ?? "–"}% win rate</b> across ${bt.num_trades ?? 0} trades, Profit Factor <b>${bt.profit_factor ?? "–"}</b>, Max Drawdown <b>${bt.max_drawdown_pct ?? "–"}%</b>. Earnings in <b>${b.earnings?.days_until ?? "–"} days</b>.</p>
+      </div>`;
+  }
+
+  return `
+    <div class="drawer-section">
+      <h4>1 · Factor Decomposition (${esc(tk)})</h4>
+      <p>Composite $S = ${sig.score}$ · Spot $S_0 = ${fmt$(px)}$ · $\\text{ATR}_{14} = ${fmt$(sig.atr)}$ · $\\text{RSI}_{14} = ${sig.rsi ?? "–"}$.</p>
+      <ul class="reasons">${(sig.votes || []).map(v => `<li><code>${esc(v.component)}</code> ($w=${v.weight}$): raw=${v.score} — ${esc(v.reason)}</li>`).join("")}</ul>
+    </div>
+    <div class="drawer-section">
+      <h4>2 · Volatility Surface &amp; BSM Greeks</h4>
+      <p>$\\sigma_{\\text{ATM}} = ${opt.atm_iv ?? "–"}\\%$ · RV Percentile = ${opt.iv_context?.percentile ?? "–"}% (${opt.iv_context?.label || "–"}) · 25$\\Delta$-style Skew = ${opt.iv_skew ?? "–"} vol pts · PCR(vol) = ${opt.put_call_ratio_volume ?? "–"} · PCR(OI) = ${opt.put_call_ratio_oi ?? "–"} · Max Pain $K^* = ${fmt$(opt.max_pain)}$.</p>
+      ${sug ? `<p>Selected Strike $K=${sug.strike}$, $T=${sug.dte}/365$, $\\Delta=${sug.delta}$, $\\Theta=${sug.theta ?? "–"}$/day, Mid=${fmt$(sug.est_mid_price)}.</p>` : ""}
+    </div>
+    <div class="drawer-section">
+      <h4>3 · Out-of-Sample / Historical Expectancy</h4>
+      <p>Trades $N=${bt.num_trades ?? 0}$, Win Rate $p=${bt.win_rate ?? "–"}\\%$, Profit Factor $\\text{PF}=${bt.profit_factor ?? "–"}$, Expectancy/trade $= ${bt.expectancy_pct ?? "–"}\\%$, Max DD $= ${bt.max_drawdown_pct ?? "–"}\\%$.</p>
+    </div>`;
+}
+
+function renderExplainerBody(topicKey, ctx = {}) {
+  const body = $("#drawer-body");
+  const titleEl = $("#drawer-title");
+  const kickerEl = $("#drawer-kicker");
+  if (!body) return;
+
+  if (topicKey === "full_setup" || !EXPLAINER_CATALOG[topicKey]) {
+    kickerEl.textContent = `FULL-DETAIL WALKTHROUGH · ${userLevel.toUpperCase()} MODE`;
+    titleEl.textContent = `${ctx.ticker || currentTicker} — Complete Setup Explained`;
+    body.innerHTML = renderFullSetupWalkthrough(ctx);
+    return;
+  }
+
+  const item = EXPLAINER_CATALOG[topicKey];
+  kickerEl.textContent = `${item.kicker} · ${userLevel.toUpperCase()} MODE`;
+  titleEl.textContent = item.title;
+  const fn = item[userLevel] || item.trader;
+  body.innerHTML = fn(ctx) + `
+    <div class="drawer-section">
+      <h4>Want the Full ${esc(ctx.ticker || currentTicker)} Walkthrough?</h4>
+      <p>See how this metric fits into the complete trading plan for <b>${esc(ctx.ticker || currentTicker)}</b>.</p>
+      <button type="button" class="explain-btn" onclick="openExplainer('full_setup', {ticker: '${esc(ctx.ticker || currentTicker)}'})">📖 Open Complete ${esc(ctx.ticker || currentTicker)} Walkthrough</button>
+    </div>`;
+}
+
+function openExplainer(topicKey, ctx = {}) {
+  currentExplainerTopic = topicKey;
+  currentExplainerCtx = ctx;
+  syncLevelUI();
+  renderExplainerBody(topicKey, ctx);
+  $("#detail-backdrop").hidden = false;
+  const drawer = $("#detail-drawer");
+  drawer.hidden = false;
+  drawer.setAttribute("aria-hidden", "false");
+}
+window.openExplainer = openExplainer;
+
+function closeExplainer() {
+  $("#detail-backdrop").hidden = true;
+  const drawer = $("#detail-drawer");
+  drawer.hidden = true;
+  drawer.setAttribute("aria-hidden", "true");
+}
+if ($("#drawer-close")) $("#drawer-close").addEventListener("click", closeExplainer);
+if ($("#detail-backdrop")) $("#detail-backdrop").addEventListener("click", closeExplainer);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeExplainer(); });
+
+function bindExplainableElements(root = document) {
+  root.querySelectorAll("[data-explain]").forEach(el => {
+    if (el.dataset.boundExplain) return;
+    el.dataset.boundExplain = "1";
+    el.addEventListener("click", (e) => {
+      if (e.target.tagName === "A") return;
+      e.stopPropagation();
+      let ctx = {};
+      try { ctx = JSON.parse(el.dataset.ctx || "{}"); } catch {}
+      openExplainer(el.dataset.explain, ctx);
+    });
+  });
+}
+
+function buildCoachBanner(d) {
+  const sig = d.signal || {}, opt = d.options || {}, rec = opt.recommendation || {}, sug = rec.suggestion;
+  const px = d.quote?.price;
+  const cost = sug?.est_mid_price ? Math.round(sug.est_mid_price * 100) : null;
+
+  if (userLevel === "beginner") {
+    const verdictText = sig.score >= 20
+      ? `<b>${d.ticker} is in an Uptrend (+${sig.score}).</b> Buyers are in control. ${sug ? `If you want to trade this with options, 1 contract of the <b>$${sug.strike} Call (${sug.dte} days left)</b> costs about <b>$${cost} total</b>—and $${cost} is the most you can lose.` : `However, options are currently too expensive or risky near earnings, so waiting or trading shares is safer.`}`
+      : sig.score <= -15
+      ? `<b>${d.ticker} is in a Downtrend (${sig.score}).</b> Sellers are pushing the price lower—avoid buying Call options into a falling trend.`
+      : `<b>${d.ticker} is Sideways / Neutral (${sig.score}).</b> Neither buyers nor sellers have a clear edge today. Since options lose value every day from time decay, <b>sitting on your hands is the smartest play right now.</b>`;
+    return `
+      <div class="coach-card">
+        <div class="coach-head">
+          <span class="coach-badge">🌱 Guided Beginner Coach · Plain-English Summary</span>
+          <button type="button" class="explain-btn" onclick="openExplainer('full_setup', {ticker:'${d.ticker}'})">📖 Explain Full Setup Step-by-Step</button>
+        </div>
+        <div class="coach-body">${verdictText} <span class="muted">(Tap any metric tile below to learn what it means!)</span></div>
+      </div>`;
+  }
+  if (userLevel === "trader") {
+    return `
+      <div class="coach-card">
+        <div class="coach-head">
+          <span class="coach-badge">⚡ Active Swing Trader Summary</span>
+          <button type="button" class="explain-btn" onclick="openExplainer('full_setup', {ticker:'${d.ticker}'})">📖 Full Setup &amp; Risk Breakdown</button>
+        </div>
+        <div class="coach-body">
+          <b>${d.ticker} (${fmt$(px)})</b> scores <b>${sig.score >= 0 ? "+" : ""}${sig.score} (${sig.label})</b> with weekly confluence <b>${d.confluence?.state || "n/a"}</b>.
+          ${sug ? `Primary option structure: <b>${sug.action} $${sug.strike} (${sug.dte} DTE, Δ ${sug.delta}, ~${fmt$(sug.est_mid_price)})</b>.` : `Options recommendation: <b>${rec.bias || "NO TRADE"}</b>.`}
+          Tap any tile below for rules &amp; edge cases.
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="coach-card">
+      <div class="coach-head">
+        <span class="coach-badge">🔬 Quant Surface &amp; Factor Summary</span>
+        <button type="button" class="explain-btn" onclick="openExplainer('full_setup', {ticker:'${d.ticker}'})">📖 Inspect Factor &amp; BSM Diagnostics</button>
+      </div>
+      <div class="coach-body">
+        Composite $S = ${sig.score}$ · $\\sigma_{\\text{ATM}} = ${opt.atm_iv ?? "–"}\\%$ (${opt.iv_context?.percentile ?? "–"}th pctile vs RV20) · Skew = ${opt.iv_skew ?? "–"} pts · 1$\\sigma$ Move = ±$${opt.expected_move ?? "–"} (${opt.expected_move_pct ?? "–"}%).
+      </div>
+    </div>`;
+}
 
 /* ---------------- dashboard ---------------- */
 
@@ -229,52 +734,84 @@ async function loadWatchlist() {
   }
 }
 
+function renderHeadlineRow(n) {
+  const words = n.sentiment_words || [];
+  const wordChip = words.length && n.sentiment !== "neutral"
+    ? `<span class="sent-chip ${n.sentiment === "positive" ? "pos" : "neg"}">${n.sentiment === "positive" ? "bullish" : "bearish"}: ${esc(words.slice(0, 3).join(", "))}</span>`
+    : "";
+  const ctxJson = esc(JSON.stringify({
+    title: n.title,
+    sentiment: n.sentiment,
+    words: words,
+    source: n.source,
+    tickers: n.tickers || []
+  }));
+  return `<div class="news-item">
+    <span class="dot dot-${n.sentiment === "positive" ? "pos" : n.sentiment === "negative" ? "neg" : "neu"}"></span>
+    <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a>
+    ${(n.tickers || []).map(t => `<span class="chip">${esc(t)}</span>`).join("")}
+    ${wordChip}
+    <span class="news-meta">${esc(n.source)}${n.published_str ? " · " + esc(n.published_str) + " UTC" : ""}</span>
+    <button type="button" class="news-why-btn" data-explain="headline" data-ctx="${ctxJson}">ⓘ Why it matters</button>
+  </div>`;
+}
+
+function renderAgentBrief(d) {
+  const box = $("#agent-brief");
+  const sig = d.signal, opt = d.options || {}, bt = d.backtest || {}, rec = opt.recommendation || {};
+  const isBeg = userLevel === "beginner";
+  const lbl = (begText, stdText) => isBeg ? begText : stdText;
+
+  box.innerHTML = `
+    ${buildCoachBanner(d)}
+    <div class="signal-row">
+      <span class="score-big">${d.ticker}</span>
+      <span class="score-big ${sig.score >= 0 ? "up" : "down"}" data-explain="signal_score" data-ctx="${esc(JSON.stringify({ticker: d.ticker, val: sig.score, label: sig.label}))}" style="cursor:pointer" title="Tap to explain score">${sig.score >= 0 ? "+" : ""}${sig.score}</span>
+      <span class="pill ${pillClass(sig.label)}">${sig.label}</span>
+      <span class="pill ${pillClass(rec.bias || "NO-TRADE")}">Options bias: ${rec.bias || "n/a"}</span>
+      ${d.confluence ? `<span class="${d.confluence.state === "agree" ? "up" : d.confluence.state === "conflict" ? "down" : "muted"}">weekly: ${d.confluence.weekly_label} (${d.confluence.state})</span>` : ""}
+      <span class="muted">price ${fmt$(d.quote.price)} (${d.quote.change_pct >= 0 ? "+" : ""}${d.quote.change_pct?.toFixed(2)}%)</span>
+    </div>
+    ${(rec.warnings || []).map(w => `<div class="warn-box">⚠ ${w}</div>`).join("")}
+    <div class="tiles">
+      <div class="tile" data-explain="earnings" data-ctx="${esc(JSON.stringify({ticker: d.ticker, val: d.earnings?.next_earnings || 'None scheduled'}))}"><div class="k">${lbl("Earnings Risk Date", "Next earnings")}</div><div class="v ${d.earnings?.days_until != null && d.earnings.days_until <= 14 ? "warn-text" : ""}">${d.earnings?.next_earnings ?? "–"}${d.earnings?.days_until != null ? ` <span class="muted">(${d.earnings.days_until}d)</span>` : ""}</div></div>
+      <div class="tile" data-explain="atm_iv" data-ctx="${esc(JSON.stringify({ticker: d.ticker, val: opt.atm_iv}))}"><div class="k">${lbl("Option Price Level (IV)", "ATM IV")}</div><div class="v">${opt.atm_iv ?? "–"}%</div></div>
+      <div class="tile" data-explain="expected_move" data-ctx="${esc(JSON.stringify({ticker: d.ticker, val: '±$' + (opt.expected_move ?? '–') + ' (' + (opt.expected_move_pct ?? '–') + '%)'}))}"><div class="k">${lbl("Market's ± Range", `Expected move (${opt.dte ?? "?"} DTE)`)}</div><div class="v">±${opt.expected_move ?? "–"} (${opt.expected_move_pct ?? "–"}%)</div></div>
+      <div class="tile" data-explain="put_call_ratio" data-ctx="${esc(JSON.stringify({ticker: d.ticker, val: opt.put_call_ratio_volume}))}"><div class="k">${lbl("Put vs Call Crowd", "Put/Call vol")}</div><div class="v">${opt.put_call_ratio_volume ?? "–"}</div></div>
+      <div class="tile" data-explain="max_pain" data-ctx="${esc(JSON.stringify({ticker: d.ticker, val: opt.max_pain}))}"><div class="k">${lbl("Option Pin Price", "Max pain")}</div><div class="v">${opt.max_pain ?? "–"}</div></div>
+      <div class="tile" data-explain="win_rate" data-ctx="${esc(JSON.stringify({ticker: d.ticker, val: (bt.win_rate ?? '–') + '%'}))}"><div class="k">${lbl("Past Win Rate (2y)", "Backtest win rate")}</div><div class="v">${bt.win_rate ?? "–"}%</div></div>
+      <div class="tile" data-explain="profit_factor" data-ctx="${esc(JSON.stringify({ticker: d.ticker, val: bt.profit_factor}))}"><div class="k">${lbl("Win/Loss $ Ratio", "Profit factor")}</div><div class="v">${bt.profit_factor ?? "–"}</div></div>
+      ${d.scorecard?.buy?.count ? `<div class="tile" data-explain="win_rate" data-ctx="${esc(JSON.stringify({ticker: d.ticker, val: d.scorecard.buy.win_rate + '%'}))}"><div class="k">Buy-signal track record (3y)</div>
+        <div class="v ${d.scorecard.buy.win_rate >= 55 ? "up" : d.scorecard.buy.win_rate <= 45 ? "down" : ""}">${d.scorecard.buy.win_rate}%</div>
+        <div class="muted">${d.scorecard.buy.count} signals</div></div>` : ""}
+      ${opt.iv_context ? `<div class="tile" data-explain="atm_iv" data-ctx="${esc(JSON.stringify({ticker: d.ticker, val: opt.atm_iv}))}"><div class="k">IV context</div><div class="v">${opt.iv_context.label}</div>
+        <div class="muted">${opt.iv_context.percentile}th pctile vs realized</div></div>` : ""}
+    </div>
+    ${rec.spread ? `<p><b>Defined-risk alternative — ${rec.spread.name}:</b> buy $${rec.spread.buy_strike} / sell $${rec.spread.sell_strike},
+      max loss ${fmt$(rec.spread.max_loss)}, max profit ${fmt$(rec.spread.max_profit)} (${rec.spread.reward_risk}:1), breakeven ${rec.spread.breakeven}</p>` : ""}
+    ${rec.suggestion ? `<p><b>Suggested contract:</b> ${rec.suggestion.action} ${d.ticker} $${rec.suggestion.strike} exp ${rec.suggestion.expiry}
+      (~${rec.suggestion.dte} DTE, Δ ${rec.suggestion.delta}, IV ${rec.suggestion.iv}%, mid ≈ ${fmt$(rec.suggestion.est_mid_price)})<br>
+      <span class="muted">${rec.suggestion.note}</span></p>` : ""}
+    <h3>Trading plan</h3>
+    <ul class="reasons">${(d.plan.steps || []).map(s => `<li>${s}</li>`).join("")}</ul>
+    <h3 style="margin-top:12px">Why</h3>
+    <ul class="reasons">${(rec.reasons || sig.votes.map(v => v.reason)).map(r => `<li>${r}</li>`).join("")}</ul>
+    <h3 style="margin-top:12px">Latest ${d.ticker} headlines</h3>
+    ${(d.news || []).slice(0, 6).map(renderHeadlineRow).join("") || '<p class="muted">No headlines found.</p>'}
+    ${(d.degraded || []).length ? `<p class="muted">Some sections were unavailable this run
+      (${d.degraded.join(", ")}) — usually Yahoo rate-limiting. Everything else above is current;
+      retry in a minute for the rest.</p>` : ""}
+    <p class="muted">${d.plan.disclaimer}</p>`;
+  bindExplainableElements(box);
+}
+
 async function loadAgent(ticker) {
   const box = $("#agent-brief");
   box.innerHTML = `<p class="spin">Building agent brief for ${ticker} (signal + options + backtest + news)…</p>`;
   try {
     const d = await api("/api/agent/" + ticker);
-    const sig = d.signal, opt = d.options || {}, bt = d.backtest || {}, rec = opt.recommendation || {};
-    box.innerHTML = `
-      <div class="signal-row">
-        <span class="score-big">${d.ticker}</span>
-        <span class="score-big ${sig.score >= 0 ? "up" : "down"}">${sig.score >= 0 ? "+" : ""}${sig.score}</span>
-        <span class="pill ${pillClass(sig.label)}">${sig.label}</span>
-        <span class="pill ${pillClass(rec.bias || "NO-TRADE")}">Options bias: ${rec.bias || "n/a"}</span>
-        ${d.confluence ? `<span class="${d.confluence.state === "agree" ? "up" : d.confluence.state === "conflict" ? "down" : "muted"}">weekly: ${d.confluence.weekly_label} (${d.confluence.state})</span>` : ""}
-        <span class="muted">price ${fmt$(d.quote.price)} (${d.quote.change_pct >= 0 ? "+" : ""}${d.quote.change_pct?.toFixed(2)}%)</span>
-      </div>
-      ${(rec.warnings || []).map(w => `<div class="warn-box">⚠ ${w}</div>`).join("")}
-      <div class="tiles">
-        <div class="tile"><div class="k">Next earnings</div><div class="v ${d.earnings?.days_until != null && d.earnings.days_until <= 14 ? "warn-text" : ""}">${d.earnings?.next_earnings ?? "–"}${d.earnings?.days_until != null ? ` <span class="muted">(${d.earnings.days_until}d)</span>` : ""}</div></div>
-        <div class="tile"><div class="k">ATM IV</div><div class="v">${opt.atm_iv ?? "–"}%</div></div>
-        <div class="tile"><div class="k">Expected move (${opt.dte ?? "?"} DTE)</div><div class="v">±${opt.expected_move ?? "–"} (${opt.expected_move_pct ?? "–"}%)</div></div>
-        <div class="tile"><div class="k">Put/Call vol</div><div class="v">${opt.put_call_ratio_volume ?? "–"}</div></div>
-        <div class="tile"><div class="k">Max pain</div><div class="v">${opt.max_pain ?? "–"}</div></div>
-        <div class="tile"><div class="k">Backtest win rate</div><div class="v">${bt.win_rate ?? "–"}%</div></div>
-        <div class="tile"><div class="k">Profit factor</div><div class="v">${bt.profit_factor ?? "–"}</div></div>
-        ${d.scorecard?.buy?.count ? `<div class="tile"><div class="k">Buy-signal track record (3y)</div>
-          <div class="v ${d.scorecard.buy.win_rate >= 55 ? "up" : d.scorecard.buy.win_rate <= 45 ? "down" : ""}">${d.scorecard.buy.win_rate}%</div>
-          <div class="muted">${d.scorecard.buy.count} signals</div></div>` : ""}
-        ${opt.iv_context ? `<div class="tile"><div class="k">IV context</div><div class="v">${opt.iv_context.label}</div>
-          <div class="muted">${opt.iv_context.percentile}th pctile vs realized</div></div>` : ""}
-      </div>
-      ${rec.spread ? `<p><b>Defined-risk alternative — ${rec.spread.name}:</b> buy $${rec.spread.buy_strike} / sell $${rec.spread.sell_strike},
-        max loss ${fmt$(rec.spread.max_loss)}, max profit ${fmt$(rec.spread.max_profit)} (${rec.spread.reward_risk}:1), breakeven ${rec.spread.breakeven}</p>` : ""}
-      ${rec.suggestion ? `<p><b>Suggested contract:</b> ${rec.suggestion.action} ${d.ticker} $${rec.suggestion.strike} exp ${rec.suggestion.expiry}
-        (~${rec.suggestion.dte} DTE, Δ ${rec.suggestion.delta}, IV ${rec.suggestion.iv}%, mid ≈ ${fmt$(rec.suggestion.est_mid_price)})<br>
-        <span class="muted">${rec.suggestion.note}</span></p>` : ""}
-      <h3>Trading plan</h3>
-      <ul class="reasons">${(d.plan.steps || []).map(s => `<li>${s}</li>`).join("")}</ul>
-      <h3 style="margin-top:12px">Why</h3>
-      <ul class="reasons">${(rec.reasons || sig.votes.map(v => v.reason)).map(r => `<li>${r}</li>`).join("")}</ul>
-      <h3 style="margin-top:12px">Latest ${d.ticker} headlines</h3>
-      ${(d.news || []).slice(0, 6).map(n => `<div class="news-item"><span class="dot dot-${n.sentiment === "positive" ? "pos" : n.sentiment === "negative" ? "neg" : "neu"}"></span>
-        <a href="${n.link}" target="_blank" rel="noopener">${n.title}</a><span class="news-meta">${n.source}</span></div>`).join("") || '<p class="muted">No headlines found.</p>'}
-      ${(d.degraded || []).length ? `<p class="muted">Some sections were unavailable this run
-        (${d.degraded.join(", ")}) — usually Yahoo rate-limiting. Everything else above is current;
-        retry in a minute for the rest.</p>` : ""}
-      <p class="muted">${d.plan.disclaimer}</p>`;
+    lastAgentBrief = d;
+    renderAgentBrief(d);
   } catch (e) {
     box.innerHTML = `<p class="err">Agent brief failed: ${e.message}</p>
       <p class="muted">This is almost always Yahoo Finance throttling the server rather than a bug
@@ -863,35 +1400,51 @@ $("#alerts-notify-btn").addEventListener("click", async () => {
   $("#alerts-notify-btn").textContent = p === "granted" ? "✔ Notifications on" : "Notifications blocked";
 });
 
-/* ---------------- analyze ---------------- */
+/* /* ---------------- analyze ---------------- */
+
+function renderAnalysisView(d) {
+  const s = d.signal;
+  const isBeg = userLevel === "beginner";
+  const modeNote = isBeg
+    ? `<div class="coach-card"><div class="coach-head"><span class="coach-badge">🌱 Beginner Chart Guide</span><button type="button" class="explain-btn" onclick="openExplainer('signal_score', {ticker:'${currentTicker}', val:${s.score}, label:'${s.label}'})">ⓘ How This Score Works</button></div><div class="coach-body"><b>${currentTicker}</b> is at <b>${fmt$(s.close)}</b> with a technical score of <b>${s.score >= 0 ? "+" : ""}${s.score} (${s.label})</b>. The blue line is the stock price; the orange (20-day) and green (50-day) lines show the short- and medium-term trend. When price stays above both lines, the trend is healthy.</div></div>`
+    : userLevel === "quant"
+    ? `<div class="coach-card"><div class="coach-head"><span class="coach-badge">🔬 Quant Technical Diagnostics</span></div><div class="coach-body">Close $S_t = ${fmt$(s.close)}$ · $\\text{RSI}_{14} = ${s.rsi ?? "–"}$ · $\\text{ATR}_{14} = ${fmt$(s.atr)}$ (${s.close && s.atr ? ((s.atr / s.close) * 100).toFixed(2) + "% daily vol" : "–"}). Tap any component row in the table below to inspect its factor math.</div></div>`
+    : "";
+
+  $("#an-signal").innerHTML = `
+    ${modeNote}
+    <span class="score-big ${s.score >= 0 ? "up" : "down"}" data-explain="signal_score" data-ctx="${esc(JSON.stringify({ticker: currentTicker, val: s.score, label: s.label}))}" style="cursor:pointer">${s.score >= 0 ? "+" : ""}${s.score}</span>
+    <span class="pill ${pillClass(s.label)}">${s.label}</span>
+    <span class="muted">close ${fmt$(s.close)} · RSI ${s.rsi ?? "–"} · ATR ${s.atr ?? "–"}</span>`;
+  bindExplainableElements($("#an-signal"));
+
+  const ch = d.chart;
+  drawChart("chart-price", ch.dates, [
+    { name: "Close", data: ch.close, color: COLORS.s1, width: 2 },
+    { name: "SMA20", data: ch.sma20, color: COLORS.s2, width: 1.5 },
+    { name: "SMA50", data: ch.sma50, color: COLORS.s3, width: 1.5 },
+    { name: "BB up", data: ch.bb_upper, color: COLORS.muted, width: 1, dash: [3, 3] },
+    { name: "BB low", data: ch.bb_lower, color: COLORS.muted, width: 1, dash: [3, 3] },
+  ]);
+  drawChart("chart-rsi", ch.dates, [{ name: "RSI", data: ch.rsi, color: COLORS.s1 }],
+    { min: 0, max: 100, refLines: [{ value: 30, color: COLORS.good }, { value: 70, color: COLORS.crit }] });
+  drawChart("chart-score", ch.dates, [{ name: "Score", data: ch.score, color: COLORS.s2 }],
+    { min: -100, max: 100, refLines: [{ value: 20, color: COLORS.good }, { value: -15, color: COLORS.crit }, { value: 0, color: COLORS.baseline }] });
+  const tbody = $("#votes-table tbody");
+  tbody.innerHTML = s.votes.map(v =>
+    `<tr data-explain="signal_score" data-ctx="${esc(JSON.stringify({ticker: currentTicker, val: s.score, label: s.label}))}"><td><b>${v.component}</b></td><td>${v.weight}</td>
+     <td class="${v.score >= 0 ? "up" : "down"}">${v.score >= 0 ? "+" : ""}${v.score}</td>
+     <td class="muted">${v.reason} <span style="color:var(--series-1);font-size:11px">ⓘ</span></td></tr>`).join("");
+  bindExplainableElements(tbody);
+}
 
 async function loadAnalysis() {
   $("#an-ticker").textContent = currentTicker;
   const [period, interval] = $("#an-period").value.split("|");
   try {
     const d = await api(`/api/analysis/${currentTicker}?period=${period}&interval=${interval}`);
-    const s = d.signal;
-    $("#an-signal").innerHTML = `
-      <span class="score-big ${s.score >= 0 ? "up" : "down"}">${s.score >= 0 ? "+" : ""}${s.score}</span>
-      <span class="pill ${pillClass(s.label)}">${s.label}</span>
-      <span class="muted">close ${fmt$(s.close)} · RSI ${s.rsi ?? "–"} · ATR ${s.atr ?? "–"}</span>`;
-    const ch = d.chart;
-    drawChart("chart-price", ch.dates, [
-      { name: "Close", data: ch.close, color: COLORS.s1, width: 2 },
-      { name: "SMA20", data: ch.sma20, color: COLORS.s2, width: 1.5 },
-      { name: "SMA50", data: ch.sma50, color: COLORS.s3, width: 1.5 },
-      { name: "BB up", data: ch.bb_upper, color: COLORS.muted, width: 1, dash: [3, 3] },
-      { name: "BB low", data: ch.bb_lower, color: COLORS.muted, width: 1, dash: [3, 3] },
-    ]);
-    drawChart("chart-rsi", ch.dates, [{ name: "RSI", data: ch.rsi, color: COLORS.s1 }],
-      { min: 0, max: 100, refLines: [{ value: 30, color: COLORS.good }, { value: 70, color: COLORS.crit }] });
-    drawChart("chart-score", ch.dates, [{ name: "Score", data: ch.score, color: COLORS.s2 }],
-      { min: -100, max: 100, refLines: [{ value: 20, color: COLORS.good }, { value: -15, color: COLORS.crit }, { value: 0, color: COLORS.baseline }] });
-    const tbody = $("#votes-table tbody");
-    tbody.innerHTML = s.votes.map(v =>
-      `<tr><td>${v.component}</td><td>${v.weight}</td>
-       <td class="${v.score >= 0 ? "up" : "down"}">${v.score >= 0 ? "+" : ""}${v.score}</td>
-       <td class="muted">${v.reason}</td></tr>`).join("");
+    lastAnalysisData = d;
+    renderAnalysisView(d);
     $("#an-updated").textContent = "updated " + new Date().toLocaleTimeString();
     loadScorecard();
   } catch (e) {
@@ -906,7 +1459,7 @@ async function loadScorecard() {
   try {
     const d = await api(`/api/scorecard/${currentTicker}`);
     const row = (name, s) => s.count
-      ? `<div class="tile"><div class="k">${name} (${s.count} signals)</div>
+      ? `<div class="tile" data-explain="win_rate" data-ctx="${esc(JSON.stringify({ticker: currentTicker, val: s.win_rate + '%'}))}"><div class="k">${name} (${s.count} signals)</div>
          <div class="v ${s.win_rate >= 55 ? "up" : s.win_rate <= 45 ? "down" : ""}">${s.win_rate}% win</div>
          <div class="muted">avg ${s.avg_fwd_return_pct >= 0 ? "+" : ""}${s.avg_fwd_return_pct}% over ${d.horizon_days} bars</div></div>`
       : `<div class="tile"><div class="k">${name}</div><div class="v muted">no signals</div></div>`;
@@ -916,6 +1469,7 @@ async function loadScorecard() {
         <td class="${e.fwd_return_pct >= 0 ? "up" : "down"}">${e.fwd_return_pct >= 0 ? "+" : ""}${e.fwd_return_pct}%</td>
         <td>${e.win ? '<span class="up">✔ win</span>' : '<span class="down">✖ loss</span>'}</td></tr>`).join("")}</tbody></table>` : ""}
       <p class="muted">${d.note}</p>`;
+    bindExplainableElements(box);
   } catch (e) {
     box.innerHTML = `<p class="err">${e.message}</p>`;
   }
@@ -923,60 +1477,78 @@ async function loadScorecard() {
 
 /* ---------------- options ---------------- */
 
+function renderOptionsView(d) {
+  const rec = d.recommendation;
+  const isBeg = userLevel === "beginner";
+  const lbl = (beg, std) => isBeg ? beg : std;
+  const sug = rec.suggestion;
+  const contractCost = sug?.est_mid_price ? Math.round(sug.est_mid_price * 100) : null;
+
+  const begBanner = isBeg
+    ? `<div class="coach-card"><div class="coach-head"><span class="coach-badge">🌱 Beginner Options Translator</span><button type="button" class="explain-btn" onclick="openExplainer('dte', {ticker:'${currentTicker}', val:${d.dte}})">ⓘ Why DTE &amp; Time Decay Matter</button></div><div class="coach-body">${sug ? `1 contract controls <b>100 shares</b>. Buying the <b>$${sug.strike} option (${d.dte} days left)</b> at <b>${fmt$(sug.est_mid_price)}</b> costs about <b>$${contractCost} out of pocket</b>. That $${contractCost} is the most you can lose. Because this expiration has <b>${d.dte} days</b> left, daily time decay is ${fmt$(Math.abs(sug.theta || 0) * 100)}/day per contract.` : `Currently rated <b>${rec.bias}</b>. Tap any metric tile below to see what it means in plain English.`}</div></div>`
+    : "";
+
+  $("#op-rec").innerHTML = `
+    ${begBanner}
+    <div class="signal-row">
+      <span class="pill ${pillClass(rec.bias)}">${rec.bias}</span>
+      <span class="score-big ${rec.combined_score >= 0 ? "up" : "down"}">${rec.combined_score >= 0 ? "+" : ""}${rec.combined_score}</span>
+      <span class="muted">combined stock + options score</span>
+    </div>
+    ${(rec.warnings || []).map(w => `<div class="warn-box">⚠ ${w}</div>`).join("")}
+    ${rec.suggestion ? `<p><b>${rec.suggestion.action}</b> $${rec.suggestion.strike} exp ${rec.suggestion.expiry}
+      — Δ ${rec.suggestion.delta}, Θ ${rec.suggestion.theta}/day, IV ${rec.suggestion.iv}%, mid ≈ ${fmt$(rec.suggestion.est_mid_price)} (${contractCost ? "~$" + contractCost + "/contract" : ""})<br>
+      <span class="muted">${rec.suggestion.note}</span></p>` : ""}
+    ${rec.spread ? `<p><b>Defined-risk alternative — ${rec.spread.name}:</b>
+      buy $${rec.spread.buy_strike} / sell $${rec.spread.sell_strike} for ≈ ${fmt$(rec.spread.net_debit)} debit.
+      Max loss ${fmt$(rec.spread.max_loss)}, max profit ${fmt$(rec.spread.max_profit)}
+      (${rec.spread.reward_risk}:1), breakeven ${rec.spread.breakeven}.<br>
+      <span class="muted">${rec.spread.note}</span></p>` : ""}
+    ${d.iv_context ? `<p class="muted">IV context: ${d.iv_context.note}</p>` : ""}
+    <ul class="reasons">${rec.reasons.map(r => `<li>${r}</li>`).join("")}</ul>`;
+
+  const metricsSpec = [
+    [lbl("Stock Price", "Spot"), fmt$(d.spot), "signal_score", d.spot],
+    [lbl("Days Left (DTE)", "DTE"), d.dte, "dte", d.dte],
+    [lbl("Earnings Date", "Next earnings"), d.earnings?.next_earnings ? `${d.earnings.next_earnings}${d.earnings_before_expiry ? " ⚠" : ""}` : "–", "earnings", d.earnings?.next_earnings],
+    [lbl("Option Price Level (IV)", "ATM IV"), (d.atm_iv ?? "–") + "%", "atm_iv", d.atm_iv],
+    [lbl("Market's ± Range", "Expected move"), "±" + (d.expected_move ?? "–") + ` (${d.expected_move_pct ?? "–"}%)`, "expected_move", "±$" + (d.expected_move ?? "–")],
+    [lbl("Crowd Fear/Greed (Vol)", "P/C ratio (vol)"), d.put_call_ratio_volume ?? "–", "put_call_ratio", d.put_call_ratio_volume],
+    [lbl("Open Positions P/C", "P/C ratio (OI)"), d.put_call_ratio_oi ?? "–", "put_call_ratio", d.put_call_ratio_oi],
+    [lbl("Downside Fear Skew", "IV skew"), (d.iv_skew ?? "–") + " pts", "atm_iv", d.atm_iv],
+    [lbl("Cheap vs Expensive", "IV context"), d.iv_context ? `${d.iv_context.label} (${d.iv_context.percentile}%)` : "–", "atm_iv", d.atm_iv],
+    [lbl("Option Pin Price", "Max pain"), d.max_pain ?? "–", "max_pain", d.max_pain],
+  ];
+  $("#op-metrics").innerHTML = metricsSpec.map(([k, v, topic, rawVal]) =>
+    `<div class="tile" data-explain="${topic}" data-ctx="${esc(JSON.stringify({ticker: currentTicker, val: rawVal}))}"><div class="k">${k}</div><div class="v">${v}</div></div>`
+  ).join("");
+  bindExplainableElements($("#op-metrics"));
+
+  const row = (r) => {
+    const atm = Math.abs(r.strike - d.spot) / d.spot < 0.005;
+    return `<tr class="${r.in_the_money ? "itm" : ""} ${atm ? "atm-row" : ""}">
+      <td><b>${r.strike}</b></td><td>${r.bid ?? "–"}</td><td>${r.ask ?? "–"}</td><td>${r.last ?? "–"}</td>
+      <td>${r.volume ?? 0}</td><td>${r.open_interest ?? 0}</td><td>${r.iv ?? "–"}</td>
+      <td>${r.delta ?? "–"}</td><td>${r.theta ?? "–"}</td></tr>`;
+  };
+  $("#calls-table tbody").innerHTML = d.calls.map(row).join("");
+  $("#puts-table tbody").innerHTML = d.puts.map(row).join("");
+  $("#unusual-table tbody").innerHTML = d.unusual_activity.length
+    ? d.unusual_activity.map(u => `<tr><td><span class="pill ${u.type === "call" ? "CALL" : "PUT"}">${u.type.toUpperCase()}</span></td>
+        <td>${u.strike}</td><td>${u.volume}</td><td>${u.open_interest}</td><td>${u.last ?? "–"}</td></tr>`).join("")
+    : `<tr><td colspan="5" class="muted">None detected at this expiry.</td></tr>`;
+}
+
 async function loadOptions(expiry) {
   $("#op-ticker").textContent = currentTicker;
   $("#op-rec").innerHTML = `<p class="spin">Loading options chain…</p>`;
   try {
     const d = await api(`/api/options/${currentTicker}` + (expiry ? `?expiry=${expiry}` : ""));
+    lastOptionsData = d;
     const sel = $("#op-expiry");
     sel.innerHTML = d.expiries.map(e => `<option ${e === d.expiry ? "selected" : ""}>${e}</option>`).join("");
     sel.onchange = () => loadOptions(sel.value);
-
-    const rec = d.recommendation;
-    $("#op-rec").innerHTML = `
-      <div class="signal-row">
-        <span class="pill ${pillClass(rec.bias)}">${rec.bias}</span>
-        <span class="score-big ${rec.combined_score >= 0 ? "up" : "down"}">${rec.combined_score >= 0 ? "+" : ""}${rec.combined_score}</span>
-        <span class="muted">combined stock + options score</span>
-      </div>
-      ${(rec.warnings || []).map(w => `<div class="warn-box">⚠ ${w}</div>`).join("")}
-      ${rec.suggestion ? `<p><b>${rec.suggestion.action}</b> $${rec.suggestion.strike} exp ${rec.suggestion.expiry}
-        — Δ ${rec.suggestion.delta}, Θ ${rec.suggestion.theta}/day, IV ${rec.suggestion.iv}%, mid ≈ ${fmt$(rec.suggestion.est_mid_price)}<br>
-        <span class="muted">${rec.suggestion.note}</span></p>` : ""}
-      ${rec.spread ? `<p><b>Defined-risk alternative — ${rec.spread.name}:</b>
-        buy $${rec.spread.buy_strike} / sell $${rec.spread.sell_strike} for ≈ ${fmt$(rec.spread.net_debit)} debit.
-        Max loss ${fmt$(rec.spread.max_loss)}, max profit ${fmt$(rec.spread.max_profit)}
-        (${rec.spread.reward_risk}:1), breakeven ${rec.spread.breakeven}.<br>
-        <span class="muted">${rec.spread.note}</span></p>` : ""}
-      ${d.iv_context ? `<p class="muted">IV context: ${d.iv_context.note}</p>` : ""}
-      <ul class="reasons">${rec.reasons.map(r => `<li>${r}</li>`).join("")}</ul>`;
-
-    $("#op-metrics").innerHTML = [
-      ["Spot", fmt$(d.spot)], ["DTE", d.dte],
-      ["Next earnings", d.earnings?.next_earnings
-        ? `${d.earnings.next_earnings}${d.earnings_before_expiry ? " ⚠" : ""}` : "–"],
-      ["ATM IV", (d.atm_iv ?? "–") + "%"],
-      ["Expected move", "±" + (d.expected_move ?? "–") + ` (${d.expected_move_pct ?? "–"}%)`],
-      ["P/C ratio (vol)", d.put_call_ratio_volume ?? "–"],
-      ["P/C ratio (OI)", d.put_call_ratio_oi ?? "–"],
-      ["IV skew", (d.iv_skew ?? "–") + " pts"],
-      ["IV context", d.iv_context ? `${d.iv_context.label} (${d.iv_context.percentile}%)` : "–"],
-      ["Max pain", d.max_pain ?? "–"],
-    ].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
-
-    const row = (r) => {
-      const atm = Math.abs(r.strike - d.spot) / d.spot < 0.005;
-      return `<tr class="${r.in_the_money ? "itm" : ""} ${atm ? "atm-row" : ""}">
-        <td><b>${r.strike}</b></td><td>${r.bid ?? "–"}</td><td>${r.ask ?? "–"}</td><td>${r.last ?? "–"}</td>
-        <td>${r.volume ?? 0}</td><td>${r.open_interest ?? 0}</td><td>${r.iv ?? "–"}</td>
-        <td>${r.delta ?? "–"}</td><td>${r.theta ?? "–"}</td></tr>`;
-    };
-    $("#calls-table tbody").innerHTML = d.calls.map(row).join("");
-    $("#puts-table tbody").innerHTML = d.puts.map(row).join("");
-    $("#unusual-table tbody").innerHTML = d.unusual_activity.length
-      ? d.unusual_activity.map(u => `<tr><td><span class="pill ${u.type === "call" ? "CALL" : "PUT"}">${u.type.toUpperCase()}</span></td>
-          <td>${u.strike}</td><td>${u.volume}</td><td>${u.open_interest}</td><td>${u.last ?? "–"}</td></tr>`).join("")
-      : `<tr><td colspan="5" class="muted">None detected at this expiry.</td></tr>`;
+    renderOptionsView(d);
     $("#op-updated").textContent = "updated " + new Date().toLocaleTimeString();
   } catch (e) {
     $("#op-rec").innerHTML = `<p class="err">Options load failed: ${e.message}</p>`;
@@ -1047,20 +1619,35 @@ $("#bt-optimize").addEventListener("click", async () => {
       runBacktest();
     }));
   } catch (e) {
-    $("#bt-opt-table tbody").innerHTML = `<tr><td colspan="10" class="err">${e.message}</td></tr>`;
+    $("#bt-opt-table tbody").innerHTML = `<tr><td colspan="10" class="err">${e.message}</div></tr>`;
   }
 });
 
 /* ---------------- news ---------------- */
 
 let newsItems = [];
+let newsLoadedTicker = "";
 
-async function loadNews() {
+function populateNewsTickerDropdown(selectedTicker) {
+  const sel = $("#news-ticker");
+  if (!sel) return;
+  const mentioned = [...new Set([...WATCHLIST_17, ...newsItems.flatMap(n => n.tickers || [])])].sort();
+  sel.innerHTML = `<option value="">All Market &amp; Tech (11 Feeds)</option>` +
+    mentioned.map(t => `<option value="${t}" ${t === selectedTicker ? "selected" : ""}>${t}</option>`).join("");
+}
+
+async function loadNews(forceTicker) {
+  const sel = $("#news-ticker");
+  const tk = forceTicker !== undefined ? forceTicker : (sel ? sel.value : "");
+  $("#news-list").innerHTML = `<p class="spin">Fetching live ${tk || "market & tech"} headlines…</p>`;
   try {
-    const d = await api("/api/news");
-    newsItems = d.items;
+    const path = tk ? `/api/news?ticker=${encodeURIComponent(tk)}&limit=30` : "/api/news?limit=80";
+    const d = await api(path);
+    newsItems = d.items || [];
+    newsLoadedTicker = tk;
+    populateNewsTickerDropdown(tk);
     renderNews();
-    $("#news-updated").textContent = `${newsItems.length} headlines · updated ` + new Date().toLocaleTimeString();
+    $("#news-updated").textContent = `${newsItems.length} ${tk ? tk + " " : ""}headlines · updated ` + new Date().toLocaleTimeString();
   } catch (e) {
     $("#news-list").innerHTML = `<p class="err">News load failed: ${e.message}</p>`;
   }
@@ -1073,22 +1660,60 @@ function renderNews() {
     negative: $("#news-neg").checked,
   };
   const tk = $("#news-ticker").value;
-  const mentioned = [...new Set(newsItems.flatMap(n => n.tickers || []))].sort();
-  const sel = $("#news-ticker");
-  if (sel.options.length !== mentioned.length + 1) {
-    sel.innerHTML = `<option value="">All</option>` +
-      mentioned.map(t => `<option ${t === tk ? "selected" : ""}>${t}</option>`).join("");
+  if (tk !== newsLoadedTicker) {
+    loadNews(tk);
+    return;
   }
-  $("#news-list").innerHTML = newsItems
-    .filter(n => show[n.sentiment] && (!tk || (n.tickers || []).includes(tk)))
-    .map(n =>
-      `<div class="news-item"><span class="dot dot-${n.sentiment === "positive" ? "pos" : n.sentiment === "negative" ? "neg" : "neu"}"></span>
-       <a href="${n.link}" target="_blank" rel="noopener">${n.title}</a>
-       ${(n.tickers || []).map(t => `<span class="chip">${t}</span>`).join("")}
-       <span class="news-meta">${n.source} · ${n.published_str} UTC</span></div>`).join("")
+  const filtered = newsItems.filter(n => show[n.sentiment] && (!tk || (n.tickers || []).includes(tk)));
+  const posCount = newsItems.filter(n => n.sentiment === "positive").length;
+  const negCount = newsItems.filter(n => n.sentiment === "negative").length;
+  const neuCount = newsItems.filter(n => n.sentiment === "neutral").length;
+  const tone = negCount >= posCount + 2 ? "BEARISH CAUTION" : posCount >= negCount + 2 ? "BULLISH TAILWIND" : "BALANCED / NEUTRAL";
+  const toneCls = tone.includes("BEARISH") ? "down" : tone.includes("BULLISH") ? "up" : "";
+
+  const sumBox = $("#news-summary-tiles");
+  if (sumBox) {
+    const sampleNeg = newsItems.find(n => n.sentiment === "negative") || newsItems[0] || {};
+    const ctxJson = esc(JSON.stringify({
+      title: sampleNeg.title || "Live Market News",
+      sentiment: sampleNeg.sentiment || "neutral",
+      words: sampleNeg.sentiment_words || [],
+      source: sampleNeg.source || "RSS",
+      tickers: sampleNeg.tickers || (tk ? [tk] : [])
+    }));
+    sumBox.innerHTML = `
+      <div class="tile" data-explain="headline" data-ctx="${ctxJson}">
+        <div class="k">${userLevel === "beginner" ? "Overall News Mood" : "Net News Sentiment"}</div>
+        <div class="v ${toneCls}">${tone}</div>
+        <div class="muted">${tk ? "For " + tk : "Across 11 live feeds"}</div>
+      </div>
+      <div class="tile" data-explain="headline" data-ctx="${ctxJson}">
+        <div class="k">Positive Headlines</div>
+        <div class="v up">${posCount}</div>
+        <div class="muted">Bullish catalyst stems</div>
+      </div>
+      <div class="tile" data-explain="headline" data-ctx="${ctxJson}">
+        <div class="k">Negative Headlines</div>
+        <div class="v ${negCount >= 2 && tk ? "down" : ""}">${negCount}</div>
+        <div class="muted">${negCount >= 2 && tk ? "⚠ Cluster threshold (≥2)" : "Bearish risk stems"}</div>
+      </div>
+      <div class="tile" data-explain="headline" data-ctx="${ctxJson}">
+        <div class="k">Neutral / Info</div>
+        <div class="v">${neuCount}</div>
+        <div class="muted">Ambient headlines</div>
+      </div>`;
+    bindExplainableElements(sumBox);
+  }
+
+  const listBox = $("#news-list");
+  listBox.innerHTML = filtered.map(renderHeadlineRow).join("")
     || `<p class="muted">Nothing matches the current filters.</p>`;
+  bindExplainableElements(listBox);
 }
-["news-pos", "news-neu", "news-neg", "news-ticker"].forEach(id => $("#" + id).addEventListener("change", renderNews));
+
+["news-pos", "news-neu", "news-neg"].forEach(id => $("#" + id).addEventListener("change", renderNews));
+$("#news-ticker").addEventListener("change", () => loadNews($("#news-ticker").value));
+if ($("#news-refresh-btn")) $("#news-refresh-btn").addEventListener("click", () => loadNews($("#news-ticker").value));
 
 /* ---------------- journal ---------------- */
 
@@ -1342,6 +1967,7 @@ setInterval(() => {
 /* ---------------- boot ---------------- */
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+syncLevelUI();
 loadWatchlist();
 loadNews();
 pollAlerts();

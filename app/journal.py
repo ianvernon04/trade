@@ -14,8 +14,10 @@ import sqlite3
 import threading
 from pathlib import Path
 
+from . import tracking
+
 DB_PATH = Path(__file__).resolve().parent.parent / "journal.db"
-_lock = threading.Lock()
+_lock = tracking._lock
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS trades (
@@ -67,8 +69,9 @@ MULT = {"call": 100, "put": 100, "stock": 1}
 
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH)
+    c = sqlite3.connect(DB_PATH, timeout=10.0, factory=tracking._ClosingConnection)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA busy_timeout=5000")
     return c
 
 
@@ -86,6 +89,7 @@ _ADDED_COLUMNS = {
 
 def init():
     with _lock, _conn() as c:
+        c.execute("PRAGMA journal_mode=WAL")
         c.executescript(SCHEMA)
         cols = [r[1] for r in c.execute("PRAGMA table_info(trades)")]
         for name, decl in _ADDED_COLUMNS.items():  # migrate older databases

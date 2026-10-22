@@ -128,11 +128,27 @@ def _slim(df: pd.DataFrame, spot: float, T: float, kind: str) -> list[dict]:
     return rows
 
 
+def _pick_target_expiry(expiries: list[str], target_dte: int = 35,
+                        min_dte: int = 21, max_dte: int = 60) -> str | None:
+    """Choose the expiry closest to target_dte within [min_dte, max_dte], or closest overall."""
+    if not expiries:
+        return None
+    scored = []
+    for exp in expiries:
+        dte = round(_years_to_expiry(exp) * 365)
+        in_window = min_dte <= dte <= max_dte
+        scored.append((0 if in_window else 1, abs(dte - target_dte), exp))
+    scored.sort()
+    return scored[0][2]
+
+
 def analyze_chain(ticker: str, expiry: str | None = None) -> dict:
     """Full chain analysis + call/put recommendation for one expiry."""
     quote = data.get_quote(ticker)
     spot = quote["price"]
-    chain = data.get_option_chain(ticker, expiry)
+    all_expiries = data.get_option_expiries(ticker)
+    chosen_expiry = expiry or _pick_target_expiry(all_expiries)
+    chain = data.get_option_chain(ticker, chosen_expiry)
     calls, puts = chain["calls"], chain["puts"]
     expiry = chain["expiry"]
     T = _years_to_expiry(expiry)
@@ -193,7 +209,7 @@ def analyze_chain(ticker: str, expiry: str | None = None) -> dict:
         "spot": spot,
         "expiry": expiry,
         "dte": dte,
-        "expiries": data.get_option_expiries(ticker),
+        "expiries": all_expiries,
         "put_call_ratio_volume": pcr_vol,
         "put_call_ratio_oi": pcr_oi,
         "call_volume": call_vol,
@@ -254,17 +270,32 @@ def _recommend(ticker, spot, stock, pcr_vol, skew, atm_iv, expiry, dte,
         # Target ~0.35 delta: meaningful participation without pure lottery pricing.
         table = calls if side == "call" else puts
 
+        def _is_liquid(r) -> bool:
+            bid, ask = _f(r.get("bid")) or 0.0, _f(r.get("ask")) or 0.0
+            oi = _i(r.get("openInterest")) or 0
+            vol = _i(r.get("volume")) or 0
+            if bid <= 0 or ask <= 0 or ask < bid:
+                return False
+            mid = (bid + ask) / 2.0
+            spread_ratio = (ask - bid) / mid if mid > 0 else 1.0
+            return spread_ratio <= 0.25 and (oi >= 10 or vol >= 10)
+
         def _closest_to_delta(target: float):
-            best, best_d = None, 1e9
-            for _, r in table.iterrows():
-                iv = float(r.get("impliedVolatility") or 0)
-                g = bs_greeks(spot, float(r["strike"]), T, iv, side)
-                if g["delta"] is None:
-                    continue
-                dist = abs(abs(g["delta"]) - target)
-                if dist < best_d:
-                    best_d, best = dist, (r, g)
-            return best
+            for require_liquid in (True, False):
+                best, best_d = None, 1e9
+                for _, r in table.iterrows():
+                    if require_liquid and not _is_liquid(r):
+                        continue
+                    iv = float(r.get("impliedVolatility") or 0)
+                    g = bs_greeks(spot, float(r["strike"]), T, iv, side)
+                    if g["delta"] is None:
+                        continue
+                    dist = abs(abs(g["delta"]) - target)
+                    if dist < best_d:
+                        best_d, best = dist, (r, g)
+                if best is not None:
+                    return best
+            return None
 
         def _mid(r):
             if _f(r.get("bid")) and _f(r.get("ask")):
@@ -274,12 +305,17 @@ def _recommend(ticker, spot, stock, pcr_vol, skew, atm_iv, expiry, dte,
         best = _closest_to_delta(0.35)
         if best is not None:
             r, g = best
+            bid_v, ask_v = _f(r.get("bid")) or 0.0, _f(r.get("ask")) or 0.0
+            mid_v = _mid(r)
+            spread_pct = round((ask_v - bid_v) / mid_v * 100, 1) if (bid_v > 0 and ask_v >= bid_v and mid_v) else None
             suggestion = {
                 "action": f"BUY {side.upper()}",
                 "strike": float(r["strike"]),
                 "expiry": expiry,
                 "dte": dte,
-                "est_mid_price": _mid(r),
+                "est_mid_price": mid_v,
+                "spread_pct": spread_pct,
+                "open_interest": _i(r.get("openInterest")),
                 "delta": g["delta"],
                 "theta": g["theta"],
                 "iv": round(float(r.get("impliedVolatility") or 0) * 100, 1),

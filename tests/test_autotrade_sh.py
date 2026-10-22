@@ -62,7 +62,7 @@ STUB_APP_MAIN = textwrap.dedent("""
 @unittest.skipIf(BASH is None, "bash not available")
 class AutotradeShellTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="autotrade-test-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="autotrade-test-")).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.repo = self.tmp / "repo"
         (self.repo / "scripts").mkdir(parents=True)

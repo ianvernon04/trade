@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>New World Logic</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
 <link rel="manifest" href="/static/manifest.webmanifest">
@@ -28,14 +28,24 @@
     <button data-tab="journal">Journal</button>
     <button data-tab="learn">Learn</button>
   </nav>
-  <div class="ticker-box">
-    <input id="ticker-input" value="NVDA" spellcheck="false" autocomplete="off">
-    <button id="go-btn">Analyze</button>
-    <button id="bell" title="Alerts">🔔<span id="bell-count" class="badge" hidden></span></button>
+  <div class="header-right">
+    <div id="level-switcher" class="level-switcher" role="group" aria-label="Level of understanding">
+      <button type="button" data-level="beginner" title="Plain English, real-dollar risk &amp; step-by-step coaching">🌱 Beginner</button>
+      <button type="button" data-level="trader" class="active" title="Active swing trader setups, stops/targets &amp; 35-DTE options">⚡ Trader</button>
+      <button type="button" data-level="quant" title="Full Black-Scholes Greeks, IV percentiles &amp; factor diagnostics">🔬 Quant</button>
+    </div>
+    <div class="ticker-box">
+      <input id="ticker-input" value="NVDA" spellcheck="false" autocomplete="off" aria-label="Ticker symbol">
+      <button id="go-btn">Analyze</button>
+      <button id="explain-all-btn" type="button" class="explain-btn" title="Explain current ticker &amp; screen in full detail">📖 Explain</button>
+      <button id="bell" title="Alerts">🔔<span id="bell-count" class="badge" hidden></span></button>
+    </div>
   </div>
 </header>
 
-<div class="banner">Educational tool — not financial advice. Options can lose 100% of premium. Data: Yahoo Finance + public RSS feeds, auto-refreshing.</div>
+<div class="banner">
+  <span id="level-banner-desc">⚡ <b>Trader Mode:</b> Actionable technical setups, ATR stops/targets, and 30–45 DTE option plans. Tap any metric or <b>📖 Explain</b> for a full deep dive.</span>
+</div>
 
 <main>
   <!-- DASHBOARD -->
@@ -229,12 +239,14 @@
   <!-- NEWS -->
   <section id="tab-news" class="tab">
     <div class="section-head"><h2>Live technology &amp; market news</h2><span class="muted" id="news-updated"></span></div>
+    <div id="news-summary-tiles" class="tiles"></div>
     <div class="controls-row card">
       <label><input type="checkbox" id="news-pos" checked> <span class="dot dot-pos"></span>Positive</label>
       <label><input type="checkbox" id="news-neu" checked> <span class="dot dot-neu"></span>Neutral</label>
       <label><input type="checkbox" id="news-neg" checked> <span class="dot dot-neg"></span>Negative</label>
-      <label>Ticker <select id="news-ticker"><option value="">All</option></select></label>
-      <span class="muted">Sources: CNBC, TechCrunch, The Verge, Ars Technica, Wired, MarketWatch, Yahoo Finance, Investing.com, Seeking Alpha, Engadget</span>
+      <label>Ticker <select id="news-ticker"><option value="">All Market &amp; Tech</option></select></label>
+      <button type="button" id="news-refresh-btn">↻ Refresh</button>
+      <span class="muted">Sources: CNBC, TechCrunch, The Verge, Ars Technica, Wired, MarketWatch, Nasdaq, Investing.com, Seeking Alpha, Google Finance, Engadget</span>
     </div>
     <div id="news-list" class="card"></div>
   </section>
@@ -407,6 +419,61 @@
     </div>
   </section>
 </main>
+
+<!-- FULL-DETAIL INTERACTIVE EXPLAINER DRAWER / MOBILE BOTTOM SHEET -->
+<div id="detail-backdrop" class="drawer-backdrop" hidden></div>
+<aside id="detail-drawer" class="detail-drawer" aria-hidden="true" hidden>
+  <div class="drawer-handle"></div>
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-kicker" id="drawer-kicker">DEEP-DIVE EXPLAINER</div>
+      <h2 id="drawer-title">Explain in Full Detail</h2>
+    </div>
+    <button type="button" id="drawer-close" class="drawer-close" aria-label="Close">✕</button>
+  </div>
+  <div class="drawer-levels" role="group" aria-label="Explanation depth">
+    <button type="button" data-level="beginner">🌱 Beginner (Plain English)</button>
+    <button type="button" data-level="trader">⚡ Trader (Setup &amp; Rules)</button>
+    <button type="button" data-level="quant">🔬 Quant (Math &amp; Greeks)</button>
+  </div>
+  <div id="drawer-body" class="drawer-body"></div>
+</aside>
+
+<!-- MOBILE "MORE" NAVIGATION SHEET -->
+<div id="mobile-more-sheet" class="mobile-more-sheet" hidden>
+  <div class="mobile-more-head">
+    <span>All Views &amp; Tools</span>
+    <button type="button" id="mobile-more-close">✕</button>
+  </div>
+  <div class="mobile-more-grid">
+    <button type="button" data-tab="scanner">🎯 Morning Scanner</button>
+    <button type="button" data-tab="trend">📈 Daily Trend</button>
+    <button type="button" data-tab="town">🏘️ Agent Neighborhood</button>
+    <button type="button" data-tab="agent">🤖 Agent Diary &amp; Grade</button>
+    <button type="button" data-tab="backtest">🧪 Strategy Backtest</button>
+    <button type="button" data-tab="journal">📓 Trade Journal</button>
+    <button type="button" data-tab="learn">🎓 Options 101 Guide</button>
+  </div>
+</div>
+
+<!-- MOBILE BOTTOM NAVIGATION BAR -->
+<nav id="mobile-nav" class="mobile-nav" aria-label="Mobile navigation">
+  <button type="button" data-tab="dashboard" class="active">
+    <span class="m-ico">⚡</span><span>Brief</span>
+  </button>
+  <button type="button" data-tab="analyze">
+    <span class="m-ico">📊</span><span>Analyze</span>
+  </button>
+  <button type="button" data-tab="options">
+    <span class="m-ico">🎯</span><span>Options</span>
+  </button>
+  <button type="button" data-tab="news">
+    <span class="m-ico">📰</span><span>News</span>
+  </button>
+  <button type="button" id="mobile-more-btn">
+    <span class="m-ico">☰</span><span>More</span>
+  </button>
+</nav>
 
 <div id="tooltip" class="tooltip" hidden></div>
 <script src="/static/app.js"></script>

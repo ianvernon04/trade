@@ -127,14 +127,23 @@ def _stats(ticker, df, scores, trades, direction, period, interval) -> dict:
     peak = np.maximum.accumulate(eq)
     max_dd = float(((eq - peak) / peak).min()) if len(eq) > 1 else 0.0
 
-    # Rough option-proxy: a ~0.35-delta contract behaves like ~6-8x leveraged
-    # stock exposure on premium at these holding periods. Conservative 5x used.
+    # Option-proxy: a ~0.35-delta 35-DTE contract has ~5x effective delta leverage
+    # plus convexity, but bleeds ~1.1% of premium per trading bar held in theta
+    # plus ~1.5% round-trip bid/ask slippage.
     opt_lev = 5.0
+    daily_theta_drag = 0.011
+    slippage = 0.015
     opt_equity = [1.0]
-    for r in rets:
-        opt_equity.append(opt_equity[-1] * max(0.05, 1 + r * opt_lev))
+    naive_equity = [1.0]
+    for t_row, r in zip(trades, rets):
+        bars_held = max(1, int(t_row.get("bars_held", 5)))
+        naive_equity.append(naive_equity[-1] * max(0.05, 1 + r * opt_lev))
+        net_opt_ret = (r * opt_lev) + (0.5 * 8.0 * (r ** 2)) - (daily_theta_drag * bars_held) - slippage
+        opt_equity.append(opt_equity[-1] * max(0.05, 1 + net_opt_ret))
 
     buy_hold = float(df["close"].iloc[-1] / df["close"].iloc[0] - 1) * 100
+    opt_ret_pct = round((opt_equity[-1] - 1) * 100, 2)
+    naive_ret_pct = round((naive_equity[-1] - 1) * 100, 2)
 
     return {
         "ticker": ticker.upper(),
@@ -150,14 +159,16 @@ def _stats(ticker, df, scores, trades, direction, period, interval) -> dict:
                           if len(losses) and losses.sum() != 0 else None),
         "expectancy_pct": round(float(rets.mean()) * 100, 2) if len(rets) else None,
         "total_return_pct": round((eq[-1] - 1) * 100, 2),
-        "option_proxy_return_pct": round((opt_equity[-1] - 1) * 100, 2),
+        "option_proxy_return_pct": opt_ret_pct,
+        "naive_5x_return_pct": naive_ret_pct,
+        "theta_drag_pct": round(naive_ret_pct - opt_ret_pct, 2),
         "buy_hold_return_pct": round(buy_hold, 2),
         "max_drawdown_pct": round(max_dd * 100, 2),
         "equity_curve": [round(x, 4) for x in equity],
         "trades": trades[-100:],
         "score_now": float(scores.iloc[-1]),
         "note": ("Backtest uses the same composite signal shown live. Option-proxy return "
-                 "approximates a ~0.35-delta long option at 5x effective leverage; real option "
-                 "P&L also depends on IV changes and theta. Past performance never guarantees "
-                 "future results."),
+                 "models a ~0.35-delta, 35-DTE contract (~5x delta + gamma convexity minus "
+                 "~1.1%/bar theta decay and 1.5% spread slippage). Past performance never "
+                 "guarantees future results."),
     }

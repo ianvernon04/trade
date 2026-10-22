@@ -37,7 +37,8 @@ def _mark_option(trade: dict) -> dict | None:
 def live_positions(user_id: int) -> dict:
     positions = []
     totals = {"cost_basis": 0.0, "market_value": 0.0, "unrealized_pnl": 0.0,
-              "delta_shares": 0.0, "theta_per_day": 0.0}
+              "delta_shares": 0.0, "gamma_shares": 0.0, "theta_per_day": 0.0,
+              "vega_usd": 0.0}
     warnings = []
     today = date.today()
 
@@ -51,7 +52,8 @@ def live_positions(user_id: int) -> dict:
             "strike": t["strike"], "expiry": t["expiry"],
             "entry_price": t["entry_price"], "entry_date": t["entry_date"],
             "mark": None, "unrealized_pnl": None, "unrealized_pnl_pct": None,
-            "delta_shares": None, "theta_per_day": None, "iv": None,
+            "delta_shares": None, "gamma_shares": None, "theta_per_day": None,
+            "vega_usd": None, "iv": None,
             "dte": None, "earnings_in_days": None, "flags": [],
         }
         try:
@@ -65,16 +67,22 @@ def live_positions(user_id: int) -> dict:
             if mark is not None:
                 pos["mark"] = mark
                 pos["delta_shares"] = round(sign * t["quantity"], 2)
+                pos["gamma_shares"] = 0.0
                 pos["theta_per_day"] = 0.0
+                pos["vega_usd"] = 0.0
         else:
             m = _mark_option(t)
             if m and m["mark"] is not None:
                 pos["mark"] = m["mark"]
                 pos["iv"] = m["iv"]
-                if m["delta"] is not None:
+                if m.get("delta") is not None:
                     pos["delta_shares"] = round(sign * m["delta"] * t["quantity"] * 100, 1)
-                if m["theta"] is not None:
+                if m.get("gamma") is not None:
+                    pos["gamma_shares"] = round(sign * m["gamma"] * t["quantity"] * 100, 2)
+                if m.get("theta") is not None:
                     pos["theta_per_day"] = round(sign * m["theta"] * t["quantity"] * 100, 2)
+                if m.get("vega") is not None:
+                    pos["vega_usd"] = round(sign * m["vega"] * t["quantity"] * 100, 2)
             if t.get("expiry"):
                 try:
                     pos["dte"] = (date.fromisoformat(t["expiry"]) - today).days
@@ -91,8 +99,12 @@ def live_positions(user_id: int) -> dict:
         totals["cost_basis"] += entry_cost
         if pos["delta_shares"] is not None:
             totals["delta_shares"] += pos["delta_shares"]
+        if pos["gamma_shares"] is not None:
+            totals["gamma_shares"] += pos["gamma_shares"]
         if pos["theta_per_day"] is not None:
             totals["theta_per_day"] += pos["theta_per_day"]
+        if pos["vega_usd"] is not None:
+            totals["vega_usd"] += pos["vega_usd"]
 
         try:
             e = data.get_earnings_info(t["ticker"])

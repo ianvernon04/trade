@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
 
@@ -14,6 +15,53 @@ _lock = threading.Lock()
 SCAN_TTL = 600  # seconds
 
 
+def _scan_one(t: str) -> dict:
+    try:
+        df = data.get_history(t, "1y", "1d")
+        sig = score_frame(df)
+        scores = score_series(df)
+        s_now = float(scores.iloc[-1])
+        s_prev = float(scores.iloc[-2]) if len(scores) > 1 else s_now
+        crossed_buy = s_now >= 20 and s_prev < 20
+        crossed_sell = s_now <= -15 and s_prev > -15
+        try:
+            conf = confluence(sig, weekly_signal(t))
+        except Exception:
+            conf = {"state": "unknown", "weekly_label": "N/A", "weekly_score": None,
+                    "note": "weekly data unavailable"}
+        earnings = data.get_earnings_info(t)
+
+        # Rank: signal strength, fresh crossings and timeframe agreement
+        # score highest; imminent earnings drags a setup down.
+        rank = abs(s_now)
+        if crossed_buy or crossed_sell:
+            rank += 15
+        if conf["state"] == "agree":
+            rank += 10
+        elif conf["state"] == "conflict":
+            rank -= 10
+        edays = earnings.get("days_until")
+        if edays is not None and edays <= 7:
+            rank -= 8
+
+        return {
+            "ticker": t,
+            "close": sig["close"],
+            "score": s_now,
+            "label": sig["label"],
+            "regime": sig.get("regime", "RANGE"),
+            "crossed_buy": crossed_buy,
+            "crossed_sell": crossed_sell,
+            "weekly_label": conf["weekly_label"],
+            "confluence": conf["state"],
+            "earnings_in_days": edays,
+            "rsi": sig["rsi"],
+            "rank": round(rank, 1),
+        }
+    except Exception as e:
+        return {"ticker": t, "error": str(e)}
+
+
 def scan(tickers: list[str] | None = None, force: bool = False) -> dict:
     key = ",".join(sorted(tickers)) if tickers else "default"
     now = time.time()
@@ -22,51 +70,9 @@ def scan(tickers: list[str] | None = None, force: bool = False) -> dict:
         if hit and now - hit[0] < SCAN_TTL and not force:
             return hit[1]
 
-    setups = []
-    for t in (tickers or data.DEFAULT_WATCHLIST):
-        try:
-            df = data.get_history(t, "1y", "1d")
-            sig = score_frame(df)
-            scores = score_series(df)
-            s_now = float(scores.iloc[-1])
-            s_prev = float(scores.iloc[-2]) if len(scores) > 1 else s_now
-            crossed_buy = s_now >= 20 and s_prev < 20
-            crossed_sell = s_now <= -15 and s_prev > -15
-            try:
-                conf = confluence(sig, weekly_signal(t))
-            except Exception:
-                conf = {"state": "unknown", "weekly_label": "N/A", "weekly_score": None,
-                        "note": "weekly data unavailable"}
-            earnings = data.get_earnings_info(t)
-
-            # Rank: signal strength, fresh crossings and timeframe agreement
-            # score highest; imminent earnings drags a setup down.
-            rank = abs(s_now)
-            if crossed_buy or crossed_sell:
-                rank += 15
-            if conf["state"] == "agree":
-                rank += 10
-            elif conf["state"] == "conflict":
-                rank -= 10
-            edays = earnings.get("days_until")
-            if edays is not None and edays <= 7:
-                rank -= 8
-
-            setups.append({
-                "ticker": t,
-                "close": sig["close"],
-                "score": s_now,
-                "label": sig["label"],
-                "crossed_buy": crossed_buy,
-                "crossed_sell": crossed_sell,
-                "weekly_label": conf["weekly_label"],
-                "confluence": conf["state"],
-                "earnings_in_days": edays,
-                "rsi": sig["rsi"],
-                "rank": round(rank, 1),
-            })
-        except Exception as e:
-            setups.append({"ticker": t, "error": str(e)})
+    syms = list(tickers or data.DEFAULT_WATCHLIST)
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        setups = list(pool.map(_scan_one, syms))
 
     ok = [s for s in setups if "error" not in s]
     ok.sort(key=lambda x: -x["rank"])

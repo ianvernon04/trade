@@ -59,14 +59,20 @@ def score_frame(df: pd.DataFrame) -> dict:
     close = row["close"]
 
     # --- Trend: price vs moving-average stack ---
+    regime = "RANGE"
     if pd.notna(row["sma50"]):
         above50 = close > row["sma50"]
-        above200 = pd.isna(row["sma200"]) or close > row["sma200"]
+        have200 = pd.notna(row["sma200"])
+        above200 = (close > row["sma200"]) if have200 else None
         stack_bull = pd.notna(row["sma20"]) and row["sma20"] > row["sma50"]
-        d = (0.5 if above50 else -0.5) + (0.3 if above200 else -0.3) + (0.2 if stack_bull else -0.2)
+        c200 = (0.3 if above200 else -0.3) if have200 else 0.0
+        d = (0.5 if above50 else -0.5) + c200 + (0.2 if stack_bull else -0.2)
+        if (above50 and stack_bull) or (not above50 and not stack_bull):
+            regime = "TREND"
+        ma200_txt = f"{'above' if above200 else 'below'} 200-day MA, " if have200 else "200-day MA warming up, "
         vote("trend", d,
              f"Price {'above' if above50 else 'below'} 50-day MA, "
-             f"{'above' if above200 else 'below'} 200-day MA, "
+             f"{ma200_txt}"
              f"20/50 MA stack {'bullish' if stack_bull else 'bearish'}")
 
     # --- MACD ---
@@ -133,6 +139,7 @@ def score_frame(df: pd.DataFrame) -> dict:
     return {
         "score": score,
         "label": label_for(score),
+        "regime": regime,
         "votes": votes,
         "close": _num(close),
         "atr": _num(row["atr14"]),
@@ -165,11 +172,12 @@ def score_series(df: pd.DataFrame) -> pd.Series:
     score = pd.Series(0.0, index=ind.index)
     used = pd.Series(0.0, index=ind.index)
 
-    # Trend
+    # Trend (when sma200 is NaN during first 200 bars, its contribution is 0.0, not +0.3)
     have = ind["sma50"].notna()
+    c200 = ((close > ind["sma200"]).astype(float) * 2 - 1).where(ind["sma200"].notna(), 0.0) * 0.3
     t = (
         ((close > ind["sma50"]).astype(float) * 2 - 1) * 0.5
-        + ((ind["sma200"].isna()) | (close > ind["sma200"])).astype(float).mul(2).sub(1) * 0.3
+        + c200
         + ((ind["sma20"] > ind["sma50"]).astype(float) * 2 - 1) * 0.2
     )
     score += t.where(have, 0) * WEIGHTS["trend"]

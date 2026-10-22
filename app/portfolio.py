@@ -253,7 +253,8 @@ def enrich(rows: list[dict], quote=None, option=None, earnings=None,
         sign = 1 if r["direction"] == "long" else -1
         mult = 100 if r["instrument"] in ("call", "put") else 1
         p = {**r, "mark": None, "underlying_price": None, "iv": None,
-             "delta_shares": None, "theta_per_day": None, "dte": None,
+             "delta_shares": None, "gamma_shares": None, "theta_per_day": None,
+             "vega_usd": None, "dte": None,
              "earnings_in_days": None, "unrealized_pnl": None,
              "unrealized_pnl_pct": None, "flags": []}
 
@@ -265,7 +266,9 @@ def enrich(rows: list[dict], quote=None, option=None, earnings=None,
         if r["instrument"] == "stock":
             p["mark"] = p["underlying_price"]
             p["delta_shares"] = round(sign * r["quantity"], 2)
+            p["gamma_shares"] = 0.0
             p["theta_per_day"] = 0.0
+            p["vega_usd"] = 0.0
         else:
             try:
                 m = option(r) or {}
@@ -276,8 +279,12 @@ def enrich(rows: list[dict], quote=None, option=None, earnings=None,
                 p["iv"] = m.get("iv")
                 if m.get("delta") is not None:
                     p["delta_shares"] = round(sign * m["delta"] * r["quantity"] * 100, 1)
+                if m.get("gamma") is not None:
+                    p["gamma_shares"] = round(sign * m["gamma"] * r["quantity"] * 100, 2)
                 if m.get("theta") is not None:
                     p["theta_per_day"] = round(sign * m["theta"] * r["quantity"] * 100, 2)
+                if m.get("vega") is not None:
+                    p["vega_usd"] = round(sign * m["vega"] * r["quantity"] * 100, 2)
             if r.get("expiry"):
                 try:
                     p["dte"] = (date.fromisoformat(r["expiry"]) - today).days
@@ -302,7 +309,13 @@ def enrich(rows: list[dict], quote=None, option=None, earnings=None,
 
 
 def totals(rows: list[dict]) -> dict:
-    t = {"delta_shares": 0.0, "theta_per_day": 0.0, "unrealized_pnl": 0.0}
+    t = {
+        "delta_shares": 0.0,
+        "gamma_shares": 0.0,
+        "theta_per_day": 0.0,
+        "vega_usd": 0.0,
+        "unrealized_pnl": 0.0,
+    }
     for p in rows:
         for k in t:
             v = p.get(k)

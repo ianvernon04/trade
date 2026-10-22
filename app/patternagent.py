@@ -15,6 +15,7 @@ Design notes:
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from datetime import datetime, timedelta
@@ -31,17 +32,32 @@ MIN_SAMPLE_SIZE = 5  # need at least this many in a bucket (e.g., 5 AAPL trades)
 WIN_RATE_THRESHOLD = 0.65  # 65%+ win rate is statistically interesting
 
 
+def _extract_signal_meta(d: dict) -> dict:
+    sig = d.get("signal")
+    if isinstance(sig, dict):
+        return sig
+    if isinstance(sig, str) and sig.strip():
+        try:
+            parsed = json.loads(sig)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    return {}
+
+
 def analyze_patterns(decisions: list[dict], grades: list[dict]) -> dict:
     """Analyze decision history for repeating win/loss patterns.
 
-    decisions: list of agent_decisions dicts (ticker, signal_score, iv_percentile, etc.)
+    decisions: list of agent_decisions dicts (supports both SQLite columns
+               score/action/ts/signal and synthetic keys signal_score/instrument/created)
     grades: list of agent_grades dicts with (decision_id, hit, forward_return)
     """
     if len(grades) < MIN_DECISIONS:
         return {"status": "insufficient_data", "n_decisions": len(grades), "min_required": MIN_DECISIONS}
 
     # Map decision ID -> grade.
-    grade_map = {g.get("decision_id"): g for g in grades if g.get("decision_id")}
+    grade_map = {g.get("decision_id"): g for g in grades if g.get("decision_id") is not None}
 
     # Categorize by ticker, signal, IV percentile, direction, etc.
     patterns = {
@@ -63,12 +79,34 @@ def analyze_patterns(decisions: list[dict], grades: list[dict]) -> dict:
         if hit is None:
             continue
 
+        sig_meta = _extract_signal_meta(d)
         ticker = d.get("ticker", "unknown")
         direction = d.get("action", "unknown")  # buy, sell, call, put, hold, etc.
         score = d.get("signal_score")
+        if score is None:
+            score = d.get("score")
+        if score is None:
+            score = sig_meta.get("score")
+
         iv_pct = d.get("iv_percentile")
-        option_type = d.get("instrument")  # call, put, stock
-        created = d.get("created")
+        if iv_pct is None:
+            iv_pct = sig_meta.get("iv_percentile")
+        if iv_pct is not None:
+            try:
+                iv_pct = float(iv_pct)
+                if iv_pct > 1.0:
+                    iv_pct = iv_pct / 100.0
+            except (TypeError, ValueError):
+                iv_pct = None
+
+        option_type = d.get("instrument") or sig_meta.get("instrument")
+        if not option_type:
+            if direction in ("call", "put"):
+                option_type = direction
+            elif direction in ("buy", "sell"):
+                option_type = "stock"
+
+        created = d.get("created") or d.get("ts") or d.get("created_at")
         holding_days = g.get("holding_period_days")
 
         # By ticker.
@@ -110,7 +148,11 @@ def analyze_patterns(decisions: list[dict], grades: list[dict]) -> dict:
         # By weekday.
         if created:
             try:
-                dt = datetime.fromisoformat(created) if isinstance(created, str) else created
+                if isinstance(created, str):
+                    norm_ts = created[:-1] + "+00:00" if created.endswith("Z") else created
+                    dt = datetime.fromisoformat(norm_ts)
+                else:
+                    dt = created
                 weekday = dt.strftime("%A")
                 if weekday not in patterns["by_weekday"]:
                     patterns["by_weekday"][weekday] = {"wins": 0, "total": 0}

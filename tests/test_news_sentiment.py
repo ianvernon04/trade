@@ -87,6 +87,54 @@ class TestScoringShape(unittest.TestCase):
         for h in ("anything at all", "Stock surges", "Stock plunges"):
             self.assertIn(news._sentiment(h), {"positive", "negative", "neutral"})
 
+    def test_sentiment_details_returns_matched_words(self):
+        label, words = news._sentiment_details("SoFi surges after earnings beat estimates")
+        self.assertEqual(label, "positive")
+        self.assertIn("surges", words)
+        self.assertIn("beat", words)
+
+
+class TestWatchlistTickerTagging(unittest.TestCase):
+    """Every ticker on the 17-ticker watchlist must be recognized in headlines."""
+
+    def test_affordable_and_etf_tickers_are_tagged(self):
+        cases = [
+            ("SoFi Technologies rallies on strong loan growth", "SOFI"),
+            ("Intel delays Ohio chip factory timeline", "INTC"),
+            ("Rivian halts assembly line for retooling", "RIVN"),
+            ("Ford Motor reports strong hybrid truck sales", "F"),
+            ("Russell 2000 small caps jump as yields ease", "IWM"),
+            ("S&P 500 hits new record high on tech rally", "SPY"),
+            ("Nasdaq 100 surges ahead of CPI report", "QQQ"),
+        ]
+        for headline, expected_ticker in cases:
+            tagged = news._tag_tickers(headline)
+            self.assertIn(expected_ticker, tagged, f"{expected_ticker} missed in: {headline}")
+
+    def test_rss_and_atom_xml_parsing_works_without_feedparser(self):
+        sample_rss = b"""<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0"><channel>
+          <item>
+            <title>SoFi surges 8% after record member growth</title>
+            <link>https://example.com/sofi</link>
+            <pubDate>Wed, 21 Oct 2026 14:30:00 GMT</pubDate>
+            <category>SOFI</category>
+          </item>
+        </channel></rss>"""
+        entries = news._parse_xml_entries(sample_rss, limit=5)
+        self.assertEqual(len(entries), 1)
+        self.assertIn("SoFi surges", entries[0]["title"])
+        item = news._build_news_item(
+            source="TestFeed",
+            title=entries[0]["title"],
+            link=entries[0]["link"],
+            ts=entries[0]["published"],
+            categories=entries[0]["categories"],
+        )
+        self.assertEqual(item["sentiment"], "positive")
+        self.assertIn("SOFI", item["tickers"])
+        self.assertIn("surges", item["sentiment_words"])
+
 
 if __name__ == "__main__":
     unittest.main()

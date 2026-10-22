@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 DB_PATH = Path(__file__).resolve().parent.parent / "journal.db"
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS agent_events (
@@ -92,9 +92,20 @@ ACTIONS = ("buy", "sell", "call", "put", "hold", "no_trade")
 DIRECTION = {"buy": 1, "call": 1, "sell": -1, "put": -1}
 
 
+class _ClosingConnection(sqlite3.Connection):
+    """sqlite3.Connection that closes itself when used as a context manager."""
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
+
+
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH)
+    c = sqlite3.connect(DB_PATH, timeout=10.0, factory=_ClosingConnection)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA busy_timeout=5000")
     return c
 
 
@@ -115,6 +126,7 @@ def write_transaction():
 
 def init():
     with _lock, _conn() as c:
+        c.execute("PRAGMA journal_mode=WAL")
         c.executescript(SCHEMA)
 
 

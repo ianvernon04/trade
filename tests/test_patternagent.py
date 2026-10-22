@@ -155,6 +155,33 @@ class TestRunScan(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["source"], "pattern_engine")
 
+    def test_scan_extracts_patterns_from_real_db_rows(self):
+        # Insert 20 real agent_decisions rows using tracking.log_decision and grade them
+        for i in range(20):
+            dec = tracking.log_decision(
+                ticker="NVDA" if i < 12 else "AAPL",
+                action="call" if i < 15 else "put",
+                price=100.0,
+                score=48.0 if i < 15 else 15.0,
+                label="STRONG BUY" if i < 15 else "WEAK",
+                signal={"score": 48.0 if i < 15 else 15.0, "iv_percentile": 22.0 if i < 15 else 80.0},
+                ts="2026-08-05T14:30:00Z",  # Wednesday
+            )
+            with tracking._conn() as c:
+                c.execute(
+                    "UPDATE agent_decisions SET hit = ?, fwd_return_pct = ?, evaluated_at = ? WHERE id = ?",
+                    (1 if i < 15 else 0, 5.0 if i < 15 else -3.0, "2026-08-15T14:30:00Z", dec["id"]),
+                )
+
+        res = patternagent.run_scan(send=False)
+        analysis = res["analysis"]
+        self.assertEqual(analysis["status"], "ok")
+        categories = {f["category"] for f in analysis["findings"]}
+        self.assertIn("by_signal_strength", categories)
+        self.assertIn("by_option_type", categories)
+        self.assertIn("by_weekday", categories)
+        self.assertIn("by_iv_regime", categories)
+
 
 if __name__ == "__main__":
     unittest.main()

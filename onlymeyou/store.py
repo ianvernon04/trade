@@ -109,8 +109,16 @@ def ext_for(content_type: str | None, filename_hint: str | None = None) -> str:
 # --------------------------------------------------------------------------
 # connection / schema
 
+class _ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
+
+
 def _conn() -> sqlite3.Connection:
-    db = sqlite3.connect(DB_PATH, timeout=10)
+    db = sqlite3.connect(DB_PATH, timeout=10, factory=_ClosingConnection)
     db.row_factory = sqlite3.Row
     return db
 

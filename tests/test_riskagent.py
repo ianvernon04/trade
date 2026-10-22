@@ -185,6 +185,19 @@ class TestRunScan(unittest.TestCase):
         self.assertTrue(any(m["priority"] == "high" for m in res["delivered"]))
         self.assertTrue(res["analysis"]["blind"])
 
+    def test_bs_gamma_and_vega_rollup(self):
+        pos = p("NVDA", instrument="call", quantity=4, delta_shares=-180)
+        pos["dte"] = 7
+        pos["direction"] = "short"
+        pos["gamma_shares"] = -14.5
+        pos["vega_usd"] = -42.0
+        a = riskagent.analyze_portfolio({"delta_shares": -180, "theta_per_day": 18, "vega_usd": -42.0}, [pos])
+        self.assertEqual(a["net_gamma"], -14.5)
+        self.assertEqual(a["net_vega"], -42.0)
+        gamma_issue = next((i for i in a["issues"] if i["type"] == "gamma_imbalance"), None)
+        self.assertIsNotNone(gamma_issue)
+        self.assertIn("negative (short vol)", gamma_issue["note"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -85,6 +85,7 @@ def quote(ticker: str):
 
 @app.get("/api/watchlist")
 def watchlist(tickers: Optional[str] = None):
+    from concurrent.futures import ThreadPoolExecutor
     syms = [s.strip().upper() for s in (tickers or ",".join(data.DEFAULT_WATCHLIST)).split(",") if s.strip()][:20]
     # One batched request for all quotes instead of one per ticker — far
     # friendlier to Yahoo's rate limits on shared hosting IPs.
@@ -92,24 +93,28 @@ def watchlist(tickers: Optional[str] = None):
         batch = data.get_quotes_batch(syms)
     except Exception:
         batch = {}
-    out = []
-    for s in syms:
+
+    def _build_quote(s: str) -> dict:
         q = batch.get(s)
         if q is None:
             try:
                 q = data.get_quote(s)
             except Exception as e:
-                out.append({"ticker": s, "error": str(e)})
-                continue
+                return {"ticker": s, "error": str(e)}
         q = dict(q)
         try:
             sig = score_frame(data.get_history(s, "6mo", "1d"))
             q["signal_score"] = sig["score"]
             q["signal_label"] = sig["label"]
+            q["regime"] = sig.get("regime", "RANGE")
         except Exception:
             q["signal_score"] = None
             q["signal_label"] = "N/A"
-        out.append(q)
+            q["regime"] = "RANGE"
+        return q
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        out = list(pool.map(_build_quote, syms))
     return {"quotes": out}
 
 
@@ -224,7 +229,9 @@ def optimize(ticker: str, period: str = "2y", direction: str = "long"):
 # ---------- News ----------
 
 @app.get("/api/news")
-def tech_news(limit: int = 80):
+def tech_news(limit: int = 80, ticker: Optional[str] = None):
+    if ticker and ticker.strip():
+        return {"items": news.get_ticker_news(ticker.strip().upper(), limit)}
     return {"items": news.get_tech_news(limit)}
 
 

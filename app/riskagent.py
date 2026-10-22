@@ -109,18 +109,28 @@ def analyze_portfolio(totals: dict, positions_list: list[dict]) -> dict:
                     "A 1% market move could swing portfolio significantly.",
         })
 
-    # Gamma (aggregate vega risk from options; rough: sum of |gamma| * position delta * 100).
+    # Gamma & Vega: use signed Black-Scholes gamma_shares / vega_usd when available,
+    # falling back to signed near-term contract quantity for synthetic fixtures.
     # Positive gamma = benefits from realized vol; negative = suffers.
     total_gamma = 0.0
+    net_vega = _num(totals.get("vega_usd"))
+    has_position_vega = False
+    pos_vega_sum = 0.0
     for p in positions_list:
-        if p.get("instrument") in ("call", "put"):
-            # Simplified: treat gamma as a risk factor of position quantity * greeks exposure.
-            # In reality this needs to be computed from the chain, but we'll flag asymmetry.
+        if p.get("vega_usd") is not None:
+            has_position_vega = True
+            pos_vega_sum += _num(p.get("vega_usd"))
+        if p.get("gamma_shares") is not None:
+            total_gamma += _num(p.get("gamma_shares"))
+        elif p.get("instrument") in ("call", "put"):
             dte = p.get("dte")
             if dte and 1 <= dte <= 14:  # highest gamma near-term and at-the-money
-                total_gamma += _num(p.get("quantity"))  # crude approximation
+                sign = -1.0 if p.get("direction") == "short" else 1.0
+                total_gamma += sign * _num(p.get("quantity"))
+    if has_position_vega and not totals.get("vega_usd"):
+        net_vega = pos_vega_sum
 
-    # Directional mismatch: long gamma (ATM short-term options) vs short gamma (long-dated or OTM).
+    # Directional mismatch: long gamma (ATM short-term options) vs short gamma (short options).
     if abs(total_gamma) > 5:
         direction = "positive (long vol)" if total_gamma > 0 else "negative (short vol)"
         issues.append({
@@ -171,7 +181,9 @@ def analyze_portfolio(totals: dict, positions_list: list[dict]) -> dict:
     return {
         "unpriced": len(unpriced),
         "net_delta": round(delta, 1),
+        "net_gamma": round(total_gamma, 2),
         "net_theta": round(theta, 2),
+        "net_vega": round(net_vega, 2),
         "gross_delta": round(gross_delta, 1),
         "n_positions": len(positions_list),
         "risk_level": risk_level,
