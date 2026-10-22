@@ -48,20 +48,28 @@ tier wipes `journal.db` on redeploys.)
 Requires Python 3.10+ and internet access (data comes from Yahoo Finance and
 public RSS feeds — no API keys needed).
 
+## Built for Everyday Investors *and* Technical Users (3 Adaptive Modes)
+
+New World Logic features a live **3-Tier Level of Understanding switcher** in the top bar (`🌱 Beginner / Everyday` · `⚡ Trader` · `🔬 Quant`) plus an interactive **`📖 Explain` Deep-Dive Drawer**:
+
+- **🌱 Everyday / Beginner Mode:** Translates complex market data into a plain-English **Guided Coach Card** (*What the signal means*, *Why it's moving*, *How much a contract costs in plain dollars*, and *What could go wrong*), with real-world analogies and step-by-step action checklists.
+- **⚡ Trader Mode:** Focuses on actionable swing/options setups — composite technical scores (`-100` to `+100`), `TREND` vs. `RANGE` regime classification, `1.5×ATR` stops and `3.0×ATR` targets (`2.0R`), daily/weekly confluence, and liquid ~35-DTE `0.35Δ` option contracts + vertical spreads.
+- **🔬 Quant / Technical Mode:** Exposes the exact math, formulas, and telemetry under the hood — normalized weight vectors, Black-Scholes $d_1, d_2$ and portfolio-level signed Greeks ($\Delta, \Gamma, \Theta, \mathcal{V}$), 6-bucket self-learning Pattern Engine win-rate priors, and theta/slippage drag decomposition in the backtester.
+
 ## What's inside
 
 | Tab | What it does |
 |---|---|
-| **Dashboard** | Live watchlist (big tech + SPY/QQQ) with price, change, and a composite signal per ticker; click a row for a full **agent brief** combining signal + options read + backtest stats + scorecard + weekly-timeframe confluence + headlines + a concrete trading plan. |
-| **Neighborhood** | A drawn street where your agents live. **The Trader (№1)**: windows lit when awake, porch light follows its stance (green/red/blue), chimney smoke when active, mailbox flag up with its unread-mail count, career hit rate on the lawn plaque — click to step inside (Agent tab). **The Analyst (№2)**: rooftop antenna, a robot reading the paper in the window, porch light showing the market's news tone, mailbox counting briefings sent to the Trader today — click for headlines (Tech News tab). Then three cottages for the junior agents, each with its own rooftop mark, a porch light coloured by what it last found, a mailbox counting today's briefings, and one live stat on the plaque: **Positions (№3)** — a watchtower cupola, "6 positions · 2 to review"; **Risk (№4)** — scales on the ridge, "Δ-1240 · high risk"; **Patterns (№5)** — a memory spire, "3 edges from 64 calls". Any house goes dark and starts snoring when its agent hasn't run recently. The sky follows your local clock — sun by day; moon, stars, and lit streetlamps at night (`?hour=12` / `?hour=22` to preview). |
-| **Agent** | The Claude agent's visible body: an avatar whose mood follows its latest stance (bullish / bearish / watching / asleep), a speech bubble with its current thinking, a live diary of every analysis, order, and fill it performs through the Robinhood MCP server, and its graded report card — hit rate, average forward return, best call — from the tracking store. |
-| **Scanner** | Morning sweep of the watchlist ranked by signal strength, fresh threshold crossings, and daily/weekly agreement (earnings drag rank down). Includes a macro calendar (FOMC/CPI) and a live **alert feed**: a background engine re-checks the watchlist and your open positions every 5 minutes and raises alerts for signal crossings, positions near expiry/earnings, and expired contracts — with optional browser/phone notifications. |
-| **Analyze** | Price chart with SMA20/50 + Bollinger bands, RSI, and the composite score history; a table explaining every indicator's vote and weight; and the **agent scorecard** — every historical crossing of the live signal on this ticker over 3 years, graded on forward returns, so you know the signal's actual win rate before trusting it. |
-| **Options** | Full chain for any expiry with computed Black-Scholes greeks (Δ/Θ), put/call ratios, ATM IV, **IV context** (current IV vs the past year's realized-vol distribution), expected move, IV skew, max pain, unusual-activity scanner, and a **CALL / PUT / NO TRADE** recommendation with a suggested ~0.35-delta contract **plus a defined-risk vertical spread alternative** (strikes, max loss/profit, breakeven). |
-| **Backtest** | Tests the exact signal shown live over 1-5 years with configurable thresholds, ATR stop/target, and holding period. Reports win rate, profit factor, expectancy, drawdown, equity curve, per-trade log, and an option-proxy return. A **"Find best settings" optimizer** grid-searches 36 configurations (with an explicit overfitting warning). |
-| **Tech News** | Live headlines merged from CNBC, TechCrunch, The Verge, Ars Technica, Wired, MarketWatch, Yahoo Finance, Investing.com, Seeking Alpha, and Engadget, deduped, sentiment-tagged, filterable, auto-refreshing every 3 min. |
-| **Journal** | Per-user trade journals: create an account (username + password) and log entries/exits (options or stock). P&L is computed automatically (×100 per options contract), with win rate, profit factor, avg win/loss, per-ticker P&L and a cumulative P&L curve — each user sees only their own trades. Includes **live open-position tracking** (marks from live option mids, per-position and portfolio delta/theta, expiry/earnings/drawdown flags) and a **journal coach** that finds patterns in your own trades (by type, holding period, ticker). Stored locally in `journal.db` (SQLite, passwords PBKDF2-hashed). |
-| **Learn** | Options 101 for beginners: what calls/puts are, the greeks, IV & IV crush, starter strategies, risk rules, common mistakes — plus curated free videos and courses (OIC, Cboe, Investopedia, YouTube topics) with a suggested learning path. |
+| **Dashboard** | Live 17-ticker watchlist (mega-cap tech + affordable liquid names `INTC`, `SOFI`, `F`, `RIVN` + `SPY`/`QQQ`/`IWM`) with price, change, `TREND`/`RANGE` regime, and composite signal; click a row for a full **agent brief** + **3-Tier Guided Coach** combining signal, 35-DTE options read, backtest stats, scorecard, weekly confluence, and live headlines. |
+| **Neighborhood** | A drawn street where your 5 autonomous agents live: **The Trader (№1)**, **The Analyst (№2)**, **Positions (№3)**, **Risk (№4)**, and **Patterns (№5)**. Each cottage reflects live agent status, unread briefings, and portfolio/pattern metrics. |
+| **Agent** | The Claude agent's visible body, live diary of analyses/orders/fills, and graded report card from `agent_decisions`. |
+| **Scanner** | Parallelized morning sweep of the watchlist ranked by signal strength, fresh threshold crossings, and daily/weekly agreement (imminent earnings drag rank down). Includes macro calendar (`FOMC`/`CPI`) and 5-minute background alert engine. |
+| **Analyze** | Price chart with `SMA 20/50`, Bollinger bands, `RSI-14`, `MACD`, and composite score history; indicator vote table with `ⓘ Explain` buttons; and the 3-year **agent scorecard**. |
+| **Options** | Auto-selects the ~35 DTE sweet-spot expiry by default, filters for liquid strikes (tight bid-ask spread & open interest), computes full Black-Scholes Greeks ($\Delta, \Gamma, \Theta, \mathcal{V}$), IV Rank/Percentile, IV skew, max pain, unusual activity, and recommends a `~0.35Δ` contract plus a defined-risk vertical spread. |
+| **Backtest** | Tests the live composite signal over 1–5 years (with neutral `sma200` warm-up), reporting stock equity curves plus a realistic **35-DTE Option Proxy** that accounts for daily theta decay (`~1.1%/bar`) and bid-ask slippage (`1.5%`) alongside the naive 5x proxy. |
+| **Tech News** | Live headlines merged from CNBC, MarketWatch, Seeking Alpha Market Currents, Nasdaq Markets, Google Finance News, TechCrunch, The Verge, Ars Technica, Wired, and Engadget — with 17-ticker entity recognition, 3-tier per-ticker fallback, and highlighted sentiment trigger words. |
+| **Journal** | Multi-user SQLite trade journal (WAL mode enabled) with live open-position marking and full portfolio-level signed Greeks ($\Delta_{\text{shares}}, \Gamma_{\text{shares}}, \Theta_{\$/\text{day}}, \mathcal{V}_{\$}$). |
+| **Learn** | Interactive Options 101 & Deep-Dive Explainer library covering signals, Greeks, IV crush, position sizing, and risk rules at Beginner, Trader, and Quant depth. |
 
 The app also tracks **earnings dates**: the Options tab and Agent brief show the
 next report date and raise a ⚠ IV-crush warning whenever earnings land before
@@ -69,7 +77,9 @@ the option expiry you're looking at (or within 7 days), and the trading plan
 tells you to be flat before the report unless the earnings bet is the thesis.
 
 Quotes/signals refresh every 30 s while a tab is open; option chains are cached
-60 s server-side, news 3 min.
+60 s server-side, news 3 min. On mobile viewports (`≤768px`), a native-style
+5-tab bottom navigation bar and slide-up explainer sheet provide a thumb-friendly
+experience.
 
 ## Claude + Robinhood agent mode
 
